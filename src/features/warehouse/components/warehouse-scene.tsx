@@ -5,6 +5,15 @@ import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { Cell, Rack, WarehouseLayout } from "@/features/warehouse/types";
 
+const SHELF_BASE_Y = 0.36;
+const SHELF_BOARD_CENTER_OFFSET = 0.075;
+const SHELF_BOARD_THICKNESS = 0.065;
+const RACK_POST_WIDTH = 0.09;
+
+function getRackShelfY(level: number, levelSpacing: number) {
+  return SHELF_BASE_Y + (level - 1) * levelSpacing;
+}
+
 export interface WarehouseCameraApi {
   reset: () => void;
   zoomIn: () => void;
@@ -31,18 +40,15 @@ export function WarehouseScene({
       camera={{ fov: 38, near: 0.1, far: 180, position: [31, 24, 31] }}
       dpr={[1, 1.5]}
       gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
-      shadows="percentage"
+      shadows={false}
       className="warehouse-canvas"
     >
       <color attach="background" args={["#f1f5f9"]} />
       <ambientLight intensity={1.55} />
       <hemisphereLight args={["#ffffff", "#cad3df", 1.15]} />
       <directionalLight
-        castShadow
         intensity={2.1}
         position={[16, 24, 15]}
-        shadow-bias={-0.00018}
-        shadow-mapSize={[1024, 1024]}
       />
       <WarehouseRoom layout={layout} racks={racks} selectedCellId={selectedCellId} onCellSelect={onCellSelect} />
       <WarehouseCameraControls layout={layout} cameraApiRef={cameraApiRef} />
@@ -78,7 +84,7 @@ function WarehouseRoom({
         sectionThickness={0.7}
       />
 
-      <mesh receiveShadow position={[0, -0.055, 0]}>
+      <mesh position={[0, -0.055, 0]}>
         <boxGeometry args={[layout.room.width, 0.11, layout.room.length]} />
         <meshStandardMaterial color="#e5e9ee" roughness={0.88} />
       </mesh>
@@ -89,7 +95,7 @@ function WarehouseRoom({
 
       {layout.columns.map((column) => (
         <group key={column.id} position={[column.position.x, 0, column.position.z]}>
-          <mesh castShadow receiveShadow position={[0, column.dimensions.height / 2, 0]}>
+          <mesh position={[0, column.dimensions.height / 2, 0]}>
             <boxGeometry
               args={[column.dimensions.width, column.dimensions.height, column.dimensions.depth]}
             />
@@ -129,7 +135,7 @@ function WarehouseWall({ wall }: { wall: WarehouseLayout["walls"][number] }) {
 
   return (
     <group position={[centerX, wall.height / 2, centerZ]} rotation={[0, rotationY, 0]}>
-      <mesh castShadow receiveShadow>
+      <mesh>
         <boxGeometry args={[length, wall.height, wall.thickness]} />
         <meshStandardMaterial
           color="#dce3eb"
@@ -160,25 +166,25 @@ function WarehouseRack({
 }) {
   const { width, depth, height } = layout.dimensions;
   const levelSpacing = rack.levels_count > 1 ? (height - 0.92) / (rack.levels_count - 1) : 0;
-  const shelfY = (level: number) => 0.36 + (level - 1) * levelSpacing;
+  const shelfY = (level: number) => getRackShelfY(level, levelSpacing);
   const bayWidth = width / rack.cells_per_level;
 
   return (
     <group position={[layout.position.x, 0, layout.position.z]} rotation={[0, layout.rotation, 0]}>
-      <mesh castShadow position={[-width / 2 + 0.045, height / 2, -depth / 2 + 0.045]}>
-        <boxGeometry args={[0.09, height, 0.09]} />
+      <mesh position={[-width / 2 + 0.045, height / 2, -depth / 2 + 0.045]}>
+        <boxGeometry args={[RACK_POST_WIDTH, height, RACK_POST_WIDTH]} />
         <meshStandardMaterial color="#526171" metalness={0.42} roughness={0.5} />
       </mesh>
-      <mesh castShadow position={[width / 2 - 0.045, height / 2, -depth / 2 + 0.045]}>
-        <boxGeometry args={[0.09, height, 0.09]} />
+      <mesh position={[width / 2 - 0.045, height / 2, -depth / 2 + 0.045]}>
+        <boxGeometry args={[RACK_POST_WIDTH, height, RACK_POST_WIDTH]} />
         <meshStandardMaterial color="#526171" metalness={0.42} roughness={0.5} />
       </mesh>
-      <mesh castShadow position={[-width / 2 + 0.045, height / 2, depth / 2 - 0.045]}>
-        <boxGeometry args={[0.09, height, 0.09]} />
+      <mesh position={[-width / 2 + 0.045, height / 2, depth / 2 - 0.045]}>
+        <boxGeometry args={[RACK_POST_WIDTH, height, RACK_POST_WIDTH]} />
         <meshStandardMaterial color="#526171" metalness={0.42} roughness={0.5} />
       </mesh>
-      <mesh castShadow position={[width / 2 - 0.045, height / 2, depth / 2 - 0.045]}>
-        <boxGeometry args={[0.09, height, 0.09]} />
+      <mesh position={[width / 2 - 0.045, height / 2, depth / 2 - 0.045]}>
+        <boxGeometry args={[RACK_POST_WIDTH, height, RACK_POST_WIDTH]} />
         <meshStandardMaterial color="#526171" metalness={0.42} roughness={0.5} />
       </mesh>
 
@@ -186,7 +192,6 @@ function WarehouseRack({
         const dividerX = -width / 2 + index * bayWidth;
         return (
           <mesh
-            castShadow
             key={`divider-${index}`}
             position={[dividerX, height / 2, -depth / 2 + 0.11]}
           >
@@ -201,25 +206,24 @@ function WarehouseRack({
         const y = shelfY(level);
         return (
           <group key={`level-${level}`}>
-            <mesh castShadow position={[0, y, -depth / 2 + 0.03]}>
+            <mesh position={[0, y, -depth / 2 + 0.03]}>
               <boxGeometry args={[width - 0.07, 0.095, 0.11]} />
               <meshStandardMaterial color="#bd7a42" metalness={0.15} roughness={0.62} />
             </mesh>
-            <mesh castShadow position={[0, y, depth / 2 - 0.03]}>
+            <mesh position={[0, y, depth / 2 - 0.03]}>
               <boxGeometry args={[width - 0.07, 0.095, 0.11]} />
               <meshStandardMaterial color="#bd7a42" metalness={0.15} roughness={0.62} />
             </mesh>
             {Array.from({ length: rack.cells_per_level }, (_, bayIndex) => (
               <mesh
-                castShadow
                 key={`shelf-${level}-${bayIndex}`}
                 position={[
                   -width / 2 + bayWidth * (bayIndex + 0.5),
-                  y + 0.075,
+                  y + SHELF_BOARD_CENTER_OFFSET,
                   0,
                 ]}
               >
-                <boxGeometry args={[bayWidth - 0.055, 0.065, depth - 0.12]} />
+                <boxGeometry args={[bayWidth - 0.055, SHELF_BOARD_THICKNESS, depth - 0.12]} />
                 <meshStandardMaterial color="#d7dee6" metalness={0.16} roughness={0.62} />
               </mesh>
             ))}
@@ -227,11 +231,11 @@ function WarehouseRack({
         );
       })}
 
-      <mesh castShadow position={[0, height * 0.48, -depth / 2 + 0.055]} rotation={[0, 0, -0.34]}>
+      <mesh position={[0, height * 0.48, -depth / 2 + 0.055]} rotation={[0, 0, -0.34]}>
         <boxGeometry args={[width * 0.85, 0.035, 0.035]} />
         <meshStandardMaterial color="#7c8997" metalness={0.35} roughness={0.55} />
       </mesh>
-      <mesh castShadow position={[0, height * 0.48, -depth / 2 + 0.055]} rotation={[0, 0, 0.34]}>
+      <mesh position={[0, height * 0.48, -depth / 2 + 0.055]} rotation={[0, 0, 0.34]}>
         <boxGeometry args={[width * 0.85, 0.035, 0.035]} />
         <meshStandardMaterial color="#7c8997" metalness={0.35} roughness={0.55} />
       </mesh>
@@ -239,6 +243,7 @@ function WarehouseRack({
       <CellMarkers
         bayWidth={bayWidth}
         cells={rack.cells}
+        cellsPerLevel={rack.cells_per_level}
         depth={depth}
         height={height}
         levelSpacing={levelSpacing}
@@ -255,6 +260,7 @@ function WarehouseRack({
 
 function CellMarkers({
   cells,
+  cellsPerLevel,
   width,
   depth,
   height,
@@ -265,6 +271,7 @@ function CellMarkers({
   onCellSelect,
 }: {
   cells: Cell[];
+  cellsPerLevel: number;
   width: number;
   depth: number;
   height: number;
@@ -288,8 +295,20 @@ function CellMarkers({
 
     cells.forEach((cell, index) => {
       const scale = cell.id === selectedCellId ? 1.34 : cell.id === hoveredCellId ? 1.2 : 1;
-      const x = -width / 2 + bayWidth * (cell.position - 0.5);
-      const y = 0.36 + (cell.level - 1) * levelSpacing + Math.min(0.42, height / (levelsCount * 3));
+      const bayLeft = cell.position === 1
+        ? -width / 2 + RACK_POST_WIDTH
+        : -width / 2 + bayWidth * (cell.position - 1);
+      const bayRight = cell.position === cellsPerLevel
+        ? width / 2 - RACK_POST_WIDTH
+        : -width / 2 + bayWidth * cell.position;
+      const x = (bayLeft + bayRight) / 2;
+      const cellBottom = getRackShelfY(cell.level, levelSpacing) +
+        SHELF_BOARD_CENTER_OFFSET + SHELF_BOARD_THICKNESS / 2;
+      const cellTop = cell.level < levelsCount
+        ? getRackShelfY(cell.level + 1, levelSpacing) +
+          SHELF_BOARD_CENTER_OFFSET - SHELF_BOARD_THICKNESS / 2
+        : height - 0.12;
+      const y = cellBottom + Math.max(0, cellTop - cellBottom) * 0.46;
       dummy.position.set(x, y, depth / 2 + 0.085);
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
@@ -304,7 +323,7 @@ function CellMarkers({
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
     if (hitTargets) hitTargets.instanceMatrix.needsUpdate = true;
-  }, [bayWidth, cells, depth, dummy, height, hoveredCellId, levelSpacing, levelsCount, markerColor, selectedCellId, width]);
+  }, [bayWidth, cells, cellsPerLevel, depth, dummy, height, hoveredCellId, levelSpacing, levelsCount, markerColor, selectedCellId, width]);
 
   useLayoutEffect(updateInstances, [updateInstances]);
 
@@ -315,7 +334,6 @@ function CellMarkers({
     <>
       <instancedMesh
         args={[undefined, undefined, cells.length]}
-        castShadow
         ref={markersRef}
       >
         <sphereGeometry args={[0.155, 16, 12]} />
@@ -425,33 +443,32 @@ function InitialCamera({
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
 }) {
   const { camera, size } = useThree();
-  const initialized = useRef(false);
 
   useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
-
     const target = new THREE.Vector3(0, 1.35, 0);
     const aspect = size.width / Math.max(size.height, 1);
     const fov = THREE.MathUtils.degToRad("fov" in camera ? camera.fov : 38);
     const tangent = Math.tan(fov / 2);
     const elevation = 0.58;
+    const elevationAngle = Math.atan(elevation);
     const portrait = aspect < 0.82;
-    const horizontalSpan = portrait
-      ? layout.room.length * 1.02
-      : (layout.room.width + layout.room.length) * 0.68;
-    const verticalSpan = portrait
-      ? layout.room.width * elevation + layout.room.height * 0.86
-      : layout.room.length * elevation + layout.room.height * 0.86;
-    const distance = Math.max(
+    const azimuth = THREE.MathUtils.degToRad(portrait ? 22 : 45);
+    const horizontalSpan =
+      layout.room.width * Math.sin(azimuth) + layout.room.length * Math.cos(azimuth);
+    const verticalSpan =
+      (layout.room.width * Math.cos(azimuth) + layout.room.length * Math.sin(azimuth)) *
+        Math.sin(elevationAngle) +
+      layout.room.height * Math.cos(elevationAngle);
+    const viewDistance = Math.max(
       horizontalSpan / (2 * tangent * aspect),
       verticalSpan / (2 * tangent),
-    ) * 1.08;
+    ) * 1.12;
+    const horizontalDistance = viewDistance * Math.cos(elevationAngle);
 
     camera.position.set(
-      portrait ? distance : distance * 0.72,
-      distance * elevation,
-      portrait ? 0 : distance * 0.72,
+      horizontalDistance * Math.cos(azimuth),
+      horizontalDistance * elevation,
+      horizontalDistance * Math.sin(azimuth),
     );
     camera.lookAt(target);
     const controls = controlsRef.current;

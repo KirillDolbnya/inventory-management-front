@@ -1,5 +1,6 @@
-import { ChevronDown, ChevronUp, MapPin, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, MapPin, Warehouse as WarehouseIcon } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import type { Warehouse } from "@/features/dashboard/types/warehouse";
 
@@ -8,7 +9,6 @@ type WarehouseInfoCardProps = {
   inventoryQuantity: number;
   rackCount: number;
   cellCount: number;
-  occupiedCellCount: number;
   freeCellCount: number;
 };
 
@@ -17,19 +17,21 @@ export function WarehouseInfoCard({
   inventoryQuantity,
   rackCount,
   cellCount,
-  occupiedCellCount,
   freeCellCount,
 }: WarehouseInfoCardProps) {
   const [expanded, setExpanded] = useState(false);
   const metrics = [
     { label: "Стеллажи", value: rackCount },
     { label: "Ячейки", value: cellCount },
-    { label: "Занято", value: occupiedCellCount },
     { label: "Свободно", value: freeCellCount },
   ];
 
   return (
     <section aria-label="Информация о складе" className="warehouse-info-card" data-expanded={expanded}>
+      <Link className="warehouse-info-card__back" to="/">
+        <ArrowLeft aria-hidden="true" size={13} />
+        <span>Все склады</span>
+      </Link>
       <div className="warehouse-info-card__heading">
         <span aria-hidden="true" className="warehouse-info-card__icon">
           <WarehouseIcon size={17} strokeWidth={1.8} />
@@ -41,7 +43,6 @@ export function WarehouseInfoCard({
             <span>{warehouse.address}</span>
           </p>
         </div>
-        <span className="warehouse-status"><span aria-hidden="true" />Работает</span>
         <Button
           aria-expanded={expanded}
           aria-label={expanded ? "Свернуть показатели" : "Развернуть показатели"}

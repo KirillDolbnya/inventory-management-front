@@ -58,7 +58,11 @@ export function WarehouseMap({
       className="dashboard-map"
       attributionControl={false}
       zoom={12}
+      zoomDelta={0.5}
+      zoomSnap={0.1}
       zoomControl={false}
+      wheelDebounceTime={80}
+      wheelPxPerZoomLevel={120}
       scrollWheelZoom
       preferCanvas
     >
@@ -249,35 +253,36 @@ function MapLifecycleController({
 
   useEffect(() => {
     if (!bounds?.isValid()) return;
+    let secondFrame = 0;
     const firstFrame = window.requestAnimationFrame(() => {
       map.invalidateSize({ pan: false });
-      window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
         map.fitBounds(bounds.pad(0.32), { maxZoom: 12, animate: false });
       });
     });
-    return () => window.cancelAnimationFrame(firstFrame);
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
   }, [bounds, map, resetKey]);
 
   useEffect(() => {
     const container = map.getContainer();
     let frame = 0;
-    const refitAfterResize = () => {
+    const refreshSize = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         map.invalidateSize({ pan: false });
-        if (bounds?.isValid()) {
-          map.fitBounds(bounds.pad(0.32), { maxZoom: 12, animate: false });
-        }
       });
     };
-    const observer = new ResizeObserver(refitAfterResize);
+    const observer = new ResizeObserver(refreshSize);
     observer.observe(container);
 
     return () => {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [bounds, map]);
+  }, [map]);
 
   useEffect(() => {
     let frame = window.requestAnimationFrame(() => map.invalidateSize({ pan: false }));
@@ -308,6 +313,12 @@ function MapClickAway({ onClear }: { onClear: () => void }) {
 function MapControls({ onReset }: { onReset: () => void }) {
   const map = useMap();
 
+  const changeZoom = (direction: "in" | "out") => {
+    map.stop();
+    if (direction === "in") map.zoomIn(0.5, { animate: true });
+    else map.zoomOut(0.5, { animate: true });
+  };
+
   return (
     <div aria-label="Управление картой" className="map-controls" role="group">
       <Button
@@ -315,7 +326,7 @@ function MapControls({ onReset }: { onReset: () => void }) {
         className="size-10 rounded-lg bg-white text-foreground shadow-sm hover:bg-muted"
         onClick={(event) => {
           event.stopPropagation();
-          map.zoomIn();
+          changeZoom("in");
         }}
         size="icon"
         type="button"
@@ -328,7 +339,7 @@ function MapControls({ onReset }: { onReset: () => void }) {
         className="size-10 rounded-lg bg-white text-foreground shadow-sm hover:bg-muted"
         onClick={(event) => {
           event.stopPropagation();
-          map.zoomOut();
+          changeZoom("out");
         }}
         size="icon"
         type="button"

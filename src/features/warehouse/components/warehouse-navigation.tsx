@@ -18,10 +18,6 @@ export function WarehouseNavigation({ activePanel, onNavigate }: WarehouseNaviga
   return (
     <>
       <aside aria-label="Навигация по складу" className="warehouse-navigation warehouse-navigation--desktop">
-        <Link className="warehouse-back-link" to="/">
-          <span aria-hidden="true">←</span>
-          <span>Все склады</span>
-        </Link>
         <nav aria-label="Разделы склада" className="warehouse-navigation__dock">
           {sections.map(({ id, label, icon: Icon }) => {
             const active = id === "inventory" || id === "events" ? activePanel === id : activePanel === null;
@@ -38,6 +34,7 @@ export function WarehouseNavigation({ activePanel, onNavigate }: WarehouseNaviga
                 variant="ghost"
               >
                 <Icon aria-hidden="true" size={19} strokeWidth={1.8} />
+                <span>{label}</span>
               </Button>
             );
           })}

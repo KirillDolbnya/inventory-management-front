@@ -170,7 +170,6 @@ export function WarehousePage() {
         cellCount={cellCount}
         freeCellCount={Math.max(0, cellCount - occupiedCellCount)}
         inventoryQuantity={inventoryQuantity}
-        occupiedCellCount={occupiedCellCount}
         rackCount={pageData.racks.length}
         warehouse={pageData.warehouse}
       />
