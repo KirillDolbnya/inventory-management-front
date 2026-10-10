@@ -241,9 +241,7 @@ function WarehouseRack({
       </mesh>
 
       <CellMarkers
-        bayWidth={bayWidth}
         cells={rack.cells}
-        cellsPerLevel={rack.cells_per_level}
         depth={depth}
         height={height}
         levelSpacing={levelSpacing}
@@ -260,22 +258,18 @@ function WarehouseRack({
 
 function CellMarkers({
   cells,
-  cellsPerLevel,
   width,
   depth,
   height,
-  bayWidth,
   levelSpacing,
   levelsCount,
   selectedCellId,
   onCellSelect,
 }: {
   cells: Cell[];
-  cellsPerLevel: number;
   width: number;
   depth: number;
   height: number;
-  bayWidth: number;
   levelSpacing: number;
   levelsCount: number;
   selectedCellId: number | null;
@@ -287,6 +281,30 @@ function CellMarkers({
   const markerColor = useMemo(() => new THREE.Color(), []);
   const [hoveredCellId, setHoveredCellId] = useState<number | null>(null);
   const cellByInstance = useMemo(() => cells, [cells]);
+  const markerXByCellId = useMemo(() => {
+    const cellsByLevel = new Map<number, Cell[]>();
+
+    for (const cell of cells) {
+      const levelCells = cellsByLevel.get(cell.level) ?? [];
+      levelCells.push(cell);
+      cellsByLevel.set(cell.level, levelCells);
+    }
+
+    const xByCellId = new Map<number, number>();
+    for (const levelCells of cellsByLevel.values()) {
+      levelCells.sort((first, second) => first.position - second.position);
+      const spacing = Math.min(
+        0.48,
+        Math.max(0, width - RACK_POST_WIDTH * 2) / Math.max(levelCells.length, 1),
+      );
+
+      levelCells.forEach((cell, index) => {
+        xByCellId.set(cell.id, (index - (levelCells.length - 1) / 2) * spacing);
+      });
+    }
+
+    return xByCellId;
+  }, [cells, width]);
 
   const updateInstances = useCallback(() => {
     const mesh = markersRef.current;
@@ -295,13 +313,7 @@ function CellMarkers({
 
     cells.forEach((cell, index) => {
       const scale = cell.id === selectedCellId ? 1.34 : cell.id === hoveredCellId ? 1.2 : 1;
-      const bayLeft = cell.position === 1
-        ? -width / 2 + RACK_POST_WIDTH
-        : -width / 2 + bayWidth * (cell.position - 1);
-      const bayRight = cell.position === cellsPerLevel
-        ? width / 2 - RACK_POST_WIDTH
-        : -width / 2 + bayWidth * cell.position;
-      const x = (bayLeft + bayRight) / 2;
+      const x = markerXByCellId.get(cell.id) ?? 0;
       const cellBottom = getRackShelfY(cell.level, levelSpacing) +
         SHELF_BOARD_CENTER_OFFSET + SHELF_BOARD_THICKNESS / 2;
       const cellTop = cell.level < levelsCount
@@ -323,7 +335,7 @@ function CellMarkers({
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
     if (hitTargets) hitTargets.instanceMatrix.needsUpdate = true;
-  }, [bayWidth, cells, cellsPerLevel, depth, dummy, height, hoveredCellId, levelSpacing, levelsCount, markerColor, selectedCellId, width]);
+  }, [cells, depth, dummy, height, hoveredCellId, levelSpacing, levelsCount, markerColor, markerXByCellId, selectedCellId]);
 
   useLayoutEffect(updateInstances, [updateInstances]);
 
@@ -357,7 +369,7 @@ function CellMarkers({
         onPointerOut={() => setHoveredCellId(null)}
         ref={hitTargetsRef}
       >
-        <sphereGeometry args={[0.36, 12, 8]} />
+        <sphereGeometry args={[0.22, 12, 8]} />
         <meshBasicMaterial colorWrite={false} depthWrite={false} opacity={0} transparent />
       </instancedMesh>
     </>

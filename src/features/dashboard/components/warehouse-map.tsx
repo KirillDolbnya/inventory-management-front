@@ -61,9 +61,9 @@ export function WarehouseMap({
       zoomDelta={0.5}
       zoomSnap={0.1}
       zoomControl={false}
-      wheelDebounceTime={80}
-      wheelPxPerZoomLevel={120}
-      scrollWheelZoom
+      wheelDebounceTime={40}
+      wheelPxPerZoomLevel={60}
+      scrollWheelZoom="center"
       preferCanvas
     >
       <TileLayer
@@ -312,11 +312,89 @@ function MapClickAway({ onClear }: { onClear: () => void }) {
 
 function MapControls({ onReset }: { onReset: () => void }) {
   const map = useMap();
+  const onResetRef = useRef(onReset);
+  const requestedZoomRef = useRef<number | null>(null);
+  const zoomAnimationPendingRef = useRef(false);
+  const zoomAnimationActiveRef = useRef(false);
+  const pendingResetRef = useRef(false);
+  const nextZoomFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    onResetRef.current = onReset;
+  }, [onReset]);
+
+  const applyNextZoomStep = useCallback(() => {
+    if (zoomAnimationPendingRef.current) return;
+
+    const requestedZoom = requestedZoomRef.current;
+    if (requestedZoom === null) return;
+
+    const currentZoom = map.getZoom();
+    const difference = requestedZoom - currentZoom;
+    if (Math.abs(difference) < 0.05) {
+      requestedZoomRef.current = null;
+      return;
+    }
+
+    const nextZoom = currentZoom + Math.sign(difference) * Math.min(0.5, Math.abs(difference));
+    zoomAnimationPendingRef.current = true;
+    map.setZoom(nextZoom, { animate: true });
+  }, [map]);
+
+  useEffect(() => {
+    const handleZoomStart = () => {
+      zoomAnimationActiveRef.current = true;
+    };
+
+    const handleZoomEnd = () => {
+      zoomAnimationActiveRef.current = false;
+
+      if (pendingResetRef.current) {
+        pendingResetRef.current = false;
+        zoomAnimationPendingRef.current = false;
+        requestedZoomRef.current = null;
+        nextZoomFrameRef.current = window.requestAnimationFrame(() => {
+          nextZoomFrameRef.current = null;
+          onResetRef.current();
+        });
+        return;
+      }
+
+      if (!zoomAnimationPendingRef.current) return;
+      zoomAnimationPendingRef.current = false;
+
+      if (nextZoomFrameRef.current !== null) {
+        window.cancelAnimationFrame(nextZoomFrameRef.current);
+      }
+      nextZoomFrameRef.current = window.requestAnimationFrame(() => {
+        nextZoomFrameRef.current = null;
+        applyNextZoomStep();
+      });
+    };
+
+    map.on("zoomstart", handleZoomStart);
+    map.on("zoomend", handleZoomEnd);
+    return () => {
+      map.off("zoomstart", handleZoomStart);
+      map.off("zoomend", handleZoomEnd);
+      if (nextZoomFrameRef.current !== null) {
+        window.cancelAnimationFrame(nextZoomFrameRef.current);
+      }
+    };
+  }, [applyNextZoomStep, map]);
 
   const changeZoom = (direction: "in" | "out") => {
-    map.stop();
-    if (direction === "in") map.zoomIn(0.5, { animate: true });
-    else map.zoomOut(0.5, { animate: true });
+    const currentTarget = requestedZoomRef.current ?? map.getZoom();
+    const requestedStep = direction === "in" ? 0.5 : -0.5;
+    const nextTarget = Math.max(
+      map.getMinZoom(),
+      Math.min(map.getMaxZoom(), currentTarget + requestedStep),
+    );
+
+    if (nextTarget === currentTarget) return;
+
+    requestedZoomRef.current = nextTarget;
+    applyNextZoomStep();
   };
 
   return (
@@ -353,7 +431,12 @@ function MapControls({ onReset }: { onReset: () => void }) {
         className="size-10 rounded-lg bg-white text-foreground shadow-sm hover:bg-muted"
         onClick={(event) => {
           event.stopPropagation();
-          onReset();
+          requestedZoomRef.current = null;
+          if (zoomAnimationActiveRef.current || zoomAnimationPendingRef.current) {
+            pendingResetRef.current = true;
+          } else {
+            onResetRef.current();
+          }
         }}
         size="icon"
         type="button"
