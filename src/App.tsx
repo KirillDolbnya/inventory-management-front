@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { LoginPage } from "@/features/auth/pages/login-page";
 import type { DemoUser } from "@/features/auth/services/auth-service";
-import { HomePage } from "@/pages/home-page";
+import { WarehousePlaceholderPage } from "@/pages/warehouse-placeholder-page";
+
+const HomePage = lazy(() =>
+  import("@/pages/home-page").then((module) => ({ default: module.HomePage })),
+);
 
 export default function App() {
   const [demoUser, setDemoUser] = useState<DemoUser | null>(null);
@@ -23,11 +27,17 @@ export default function App() {
         path="/"
         element={
           demoUser ? (
-            <HomePage user={demoUser} onLogout={() => setDemoUser(null)} />
+            <Suspense fallback={<main aria-busy="true" className="fixed inset-0 bg-[#eef0f2]" />}>
+              <HomePage user={demoUser} onLogout={() => setDemoUser(null)} />
+            </Suspense>
           ) : (
             <Navigate to="/login" replace />
           )
         }
+      />
+      <Route
+        path="/warehouses/:warehouseId"
+        element={demoUser ? <WarehousePlaceholderPage /> : <Navigate to="/login" replace />}
       />
       <Route path="*" element={<Navigate to={demoUser ? "/" : "/login"} replace />} />
     </Routes>
