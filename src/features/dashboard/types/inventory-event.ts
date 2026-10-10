@@ -3,4 +3,5 @@ export interface InventoryEvent {
   title: string;
   description: string;
   created_at: string;
+  warehouse_id?: number;
 }

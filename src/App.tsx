@@ -2,10 +2,12 @@ import { lazy, Suspense, useState } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { LoginPage } from "@/features/auth/pages/login-page";
 import type { DemoUser } from "@/features/auth/services/auth-service";
-import { WarehousePlaceholderPage } from "@/pages/warehouse-placeholder-page";
 
 const HomePage = lazy(() =>
   import("@/pages/home-page").then((module) => ({ default: module.HomePage })),
+);
+const WarehousePage = lazy(() =>
+  import("@/pages/warehouse-page").then((module) => ({ default: module.WarehousePage })),
 );
 
 export default function App() {
@@ -37,7 +39,15 @@ export default function App() {
       />
       <Route
         path="/warehouses/:warehouseId"
-        element={demoUser ? <WarehousePlaceholderPage /> : <Navigate to="/login" replace />}
+        element={
+          demoUser ? (
+            <Suspense fallback={<main aria-busy="true" className="fixed inset-0 bg-[#f1f5f9]" />}>
+              <WarehousePage />
+            </Suspense>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
       />
       <Route path="*" element={<Navigate to={demoUser ? "/" : "/login"} replace />} />
     </Routes>

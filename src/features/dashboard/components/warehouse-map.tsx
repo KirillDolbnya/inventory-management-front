@@ -80,45 +80,101 @@ export function WarehouseMap({
       />
 
       {warehouses.map((warehouse) => (
-        <Marker
-          alt={warehouse.name}
-          bubblingMouseEvents={false}
-          icon={activeWarehouseId === warehouse.id ? activeMarkerIcon : defaultMarkerIcon}
+        <WarehouseMapMarker
+          active={activeWarehouseId === warehouse.id}
           key={warehouse.id}
-          position={[warehouse.latitude, warehouse.longitude]}
-          riseOnHover
-          title={warehouse.name}
-          eventHandlers={{
-            mouseover: () => keepTooltipOpen(warehouse.id),
-            mouseout: closeTooltipSoon,
-            click: () =>
-              onActiveWarehouseChange(
-                activeWarehouseId === warehouse.id ? null : warehouse.id,
-              ),
-          }}
-        >
-          {(activeWarehouseId === warehouse.id || hoveredWarehouseId === warehouse.id) && (
-            <Tooltip
-              className="warehouse-tooltip"
-              direction="top"
-              interactive
-              offset={[0, -13]}
-              opacity={1}
-              permanent
-            >
-              <WarehousePreview
-                warehouse={warehouse}
-                onOpenWarehouse={onOpenWarehouse}
-                onPointerEnter={() => keepTooltipOpen(warehouse.id)}
-                onPointerLeave={closeTooltipSoon}
-              />
-            </Tooltip>
-          )}
-        </Marker>
+          onActiveChange={() =>
+            onActiveWarehouseChange(activeWarehouseId === warehouse.id ? null : warehouse.id)
+          }
+          onPointerEnter={() => keepTooltipOpen(warehouse.id)}
+          onPointerLeave={closeTooltipSoon}
+          onOpenWarehouse={onOpenWarehouse}
+          visible={activeWarehouseId === warehouse.id || hoveredWarehouseId === warehouse.id}
+          warehouse={warehouse}
+        />
       ))}
 
       <MapControls onReset={onResetBounds} />
     </MapContainer>
+  );
+}
+
+function WarehouseMapMarker({
+  warehouse,
+  active,
+  visible,
+  onActiveChange,
+  onOpenWarehouse,
+  onPointerEnter,
+  onPointerLeave,
+}: {
+  warehouse: Warehouse;
+  active: boolean;
+  visible: boolean;
+  onActiveChange: () => void;
+  onOpenWarehouse: (warehouseId: number) => void;
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
+}) {
+  const map = useMap();
+  const [tooltipOffsetX, setTooltipOffsetX] = useState(0);
+  const position = useMemo<[number, number]>(
+    () => [warehouse.latitude, warehouse.longitude],
+    [warehouse.latitude, warehouse.longitude],
+  );
+
+  const updateTooltipOffset = useCallback(() => {
+    const mapWidth = map.getSize().x;
+    const cardWidth = Math.min(290, mapWidth - 32);
+    const margin = 12;
+    const markerX = map.latLngToContainerPoint(position).x;
+    const minCenter = cardWidth / 2 + margin;
+    const maxCenter = mapWidth - cardWidth / 2 - margin;
+    const desiredCenter = Math.max(minCenter, Math.min(maxCenter, markerX));
+    const nextOffset = Math.round(desiredCenter - markerX);
+    setTooltipOffsetX((current) => current === nextOffset ? current : nextOffset);
+  }, [map, position]);
+
+  useEffect(() => {
+    updateTooltipOffset();
+    map.on("move zoom resize", updateTooltipOffset);
+    return () => {
+      map.off("move zoom resize", updateTooltipOffset);
+    };
+  }, [map, updateTooltipOffset]);
+
+  return (
+    <Marker
+      alt={warehouse.name}
+      bubblingMouseEvents={false}
+      icon={active ? activeMarkerIcon : defaultMarkerIcon}
+      position={position}
+      riseOnHover
+      title={warehouse.name}
+      eventHandlers={{
+        mouseover: onPointerEnter,
+        mouseout: onPointerLeave,
+        click: onActiveChange,
+      }}
+    >
+      {visible && (
+        <Tooltip
+          className="warehouse-tooltip"
+          direction="top"
+          interactive
+          offset={[tooltipOffsetX, -13]}
+          opacity={1}
+          permanent
+        >
+          <WarehousePreview
+            warehouse={warehouse}
+            onOpenWarehouse={onOpenWarehouse}
+            onPointerEnter={onPointerEnter}
+            onPointerLeave={onPointerLeave}
+          />
+        </Tooltip>
+      )}
+    </Marker>
   );
 }
 
