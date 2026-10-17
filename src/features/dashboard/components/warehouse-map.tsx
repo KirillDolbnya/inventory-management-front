@@ -9,11 +9,6 @@ import "leaflet/dist/leaflet.css";
 const defaultMarkerIcon = createWarehouseIcon(false);
 const activeMarkerIcon = createWarehouseIcon(true);
 const defaultCenter: [number, number] = [55.7558, 37.6173];
-// Batch wheel deltas at Leaflet's default cadence and scale, then keep them queued during animations.
-const wheelZoomBatchMs = 40;
-const wheelPixelsPerZoomLevel = 60;
-// Leaflet skips animated zooms above this threshold, so larger requests are split into steps.
-const maxAnimatedZoomStep = 4;
 
 type WarehouseMapProps = {
   warehouses: Warehouse[];
@@ -63,10 +58,8 @@ export function WarehouseMap({
       className="dashboard-map"
       attributionControl={false}
       zoom={12}
-      zoomDelta={0.5}
-      zoomSnap={0.1}
       zoomControl={false}
-      scrollWheelZoom={false}
+      scrollWheelZoom
       preferCanvas
     >
       <TileLayer
@@ -256,36 +249,35 @@ function MapLifecycleController({
 
   useEffect(() => {
     if (!bounds?.isValid()) return;
-    let secondFrame = 0;
     const firstFrame = window.requestAnimationFrame(() => {
       map.invalidateSize({ pan: false });
-      secondFrame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         map.fitBounds(bounds.pad(0.32), { maxZoom: 12, animate: false });
       });
     });
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      window.cancelAnimationFrame(secondFrame);
-    };
+    return () => window.cancelAnimationFrame(firstFrame);
   }, [bounds, map, resetKey]);
 
   useEffect(() => {
     const container = map.getContainer();
     let frame = 0;
-    const refreshSize = () => {
+    const refitAfterResize = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         map.invalidateSize({ pan: false });
+        if (bounds?.isValid()) {
+          map.fitBounds(bounds.pad(0.32), { maxZoom: 12, animate: false });
+        }
       });
     };
-    const observer = new ResizeObserver(refreshSize);
+    const observer = new ResizeObserver(refitAfterResize);
     observer.observe(container);
 
     return () => {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [map]);
+  }, [bounds, map]);
 
   useEffect(() => {
     let frame = window.requestAnimationFrame(() => map.invalidateSize({ pan: false }));
@@ -315,180 +307,6 @@ function MapClickAway({ onClear }: { onClear: () => void }) {
 
 function MapControls({ onReset }: { onReset: () => void }) {
   const map = useMap();
-  const onResetRef = useRef(onReset);
-  const requestedZoomRef = useRef<number | null>(null);
-  const zoomCenterRef = useRef<L.LatLng | null>(null);
-  const zoomAnimationPendingRef = useRef(false);
-  const zoomAnimationActiveRef = useRef(false);
-  const pendingResetRef = useRef(false);
-  const nextZoomFrameRef = useRef<number | null>(null);
-  const wheelTimerRef = useRef<number | null>(null);
-  const wheelBatchStartRef = useRef<number | null>(null);
-  const wheelDeltaRef = useRef(0);
-  const queuedWheelDeltaRef = useRef(0);
-
-  useEffect(() => {
-    onResetRef.current = onReset;
-  }, [onReset]);
-
-  const applyNextZoomStep = useCallback(() => {
-    if (zoomAnimationPendingRef.current || zoomAnimationActiveRef.current || pendingResetRef.current) {
-      return;
-    }
-
-    let requestedZoom = requestedZoomRef.current;
-    const currentZoom = map.getZoom();
-    if (requestedZoom !== null && Math.abs(requestedZoom - currentZoom) < 0.05) {
-      requestedZoom = null;
-      requestedZoomRef.current = null;
-      zoomCenterRef.current = null;
-    }
-
-    if (requestedZoom === null && queuedWheelDeltaRef.current !== 0) {
-      const pixelDelta = queuedWheelDeltaRef.current;
-      queuedWheelDeltaRef.current = 0;
-      const delta = -pixelDelta;
-      const normalizedDelta = Math.abs(delta) / (wheelPixelsPerZoomLevel * 4);
-      const smoothDelta =
-        (4 * Math.log(2 / (1 + Math.exp(-normalizedDelta)))) / Math.LN2;
-      const snap = map.options.zoomSnap ?? 0;
-      const zoomDelta = snap > 0 ? Math.ceil(smoothDelta / snap) * snap : smoothDelta;
-      requestedZoom = Math.max(
-        map.getMinZoom(),
-        Math.min(map.getMaxZoom(), currentZoom + Math.sign(delta) * zoomDelta),
-      );
-
-      if (requestedZoom === currentZoom) return;
-      zoomCenterRef.current ??= map.getCenter();
-      requestedZoomRef.current = requestedZoom;
-    }
-
-    if (requestedZoom === null) return;
-
-    const difference = requestedZoom - currentZoom;
-    if (Math.abs(difference) < 0.05) {
-      requestedZoomRef.current = null;
-      zoomCenterRef.current = null;
-      return;
-    }
-
-    const nextZoom = currentZoom + Math.sign(difference) * Math.min(maxAnimatedZoomStep, Math.abs(difference));
-    zoomAnimationPendingRef.current = true;
-    map.setView(zoomCenterRef.current ?? map.getCenter(), nextZoom, { animate: true });
-  }, [map]);
-
-  const flushWheelDelta = useCallback(() => {
-    wheelTimerRef.current = null;
-    wheelBatchStartRef.current = null;
-
-    queuedWheelDeltaRef.current += wheelDeltaRef.current;
-    wheelDeltaRef.current = 0;
-    if (queuedWheelDeltaRef.current === 0 || pendingResetRef.current) return;
-    applyNextZoomStep();
-  }, [applyNextZoomStep]);
-
-  const handleWheel = useCallback((event: WheelEvent) => {
-    const target = event.target;
-    if (target instanceof Element && target.closest(".map-controls, .warehouse-tooltip")) return;
-
-    event.preventDefault();
-    // WheelEvent pixel deltas are already CSS pixels; avoid Leaflet's extra Retina/macOS reduction.
-    let delta = event.deltaY;
-    if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) delta *= 20;
-    else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) delta *= 60;
-
-    wheelDeltaRef.current += delta;
-    const now = performance.now();
-    wheelBatchStartRef.current ??= now;
-    const timeLeft = Math.max(wheelZoomBatchMs - (now - wheelBatchStartRef.current), 0);
-
-    if (wheelTimerRef.current !== null) window.clearTimeout(wheelTimerRef.current);
-    wheelTimerRef.current = window.setTimeout(flushWheelDelta, timeLeft);
-  }, [flushWheelDelta]);
-
-  useEffect(() => {
-    const handleZoomStart = () => {
-      zoomAnimationActiveRef.current = true;
-    };
-
-    const handleZoomEnd = () => {
-      zoomAnimationActiveRef.current = false;
-
-      if (pendingResetRef.current) {
-        pendingResetRef.current = false;
-        zoomAnimationPendingRef.current = false;
-        requestedZoomRef.current = null;
-        zoomCenterRef.current = null;
-        nextZoomFrameRef.current = window.requestAnimationFrame(() => {
-          nextZoomFrameRef.current = null;
-          onResetRef.current();
-        });
-        return;
-      }
-
-      zoomAnimationPendingRef.current = false;
-      if (requestedZoomRef.current === null && queuedWheelDeltaRef.current === 0) return;
-
-      if (nextZoomFrameRef.current !== null) {
-        window.cancelAnimationFrame(nextZoomFrameRef.current);
-      }
-      nextZoomFrameRef.current = window.requestAnimationFrame(() => {
-        nextZoomFrameRef.current = null;
-        applyNextZoomStep();
-      });
-    };
-
-    map.on("zoomstart", handleZoomStart);
-    map.on("zoomend", handleZoomEnd);
-    map.getContainer().addEventListener("wheel", handleWheel, { passive: false });
-    return () => {
-      map.off("zoomstart", handleZoomStart);
-      map.off("zoomend", handleZoomEnd);
-      map.getContainer().removeEventListener("wheel", handleWheel);
-      if (nextZoomFrameRef.current !== null) {
-        window.cancelAnimationFrame(nextZoomFrameRef.current);
-      }
-      if (wheelTimerRef.current !== null) window.clearTimeout(wheelTimerRef.current);
-    };
-  }, [applyNextZoomStep, handleWheel, map]);
-
-  const changeZoom = (direction: "in" | "out") => {
-    if (pendingResetRef.current) return;
-    const currentTarget = requestedZoomRef.current ?? map.getZoom();
-    const requestedStep = direction === "in" ? 0.5 : -0.5;
-    const nextTarget = Math.max(
-      map.getMinZoom(),
-      Math.min(map.getMaxZoom(), currentTarget + requestedStep),
-    );
-
-    if (nextTarget === currentTarget) return;
-
-    zoomCenterRef.current ??= map.getCenter();
-    requestedZoomRef.current = nextTarget;
-    applyNextZoomStep();
-  };
-
-  const resetBounds = () => {
-    requestedZoomRef.current = null;
-    zoomCenterRef.current = null;
-    wheelDeltaRef.current = 0;
-    queuedWheelDeltaRef.current = 0;
-    wheelBatchStartRef.current = null;
-    if (wheelTimerRef.current !== null) {
-      window.clearTimeout(wheelTimerRef.current);
-      wheelTimerRef.current = null;
-    }
-    if (nextZoomFrameRef.current !== null) {
-      window.cancelAnimationFrame(nextZoomFrameRef.current);
-      nextZoomFrameRef.current = null;
-    }
-
-    if (zoomAnimationActiveRef.current || zoomAnimationPendingRef.current) {
-      pendingResetRef.current = true;
-    } else {
-      onResetRef.current();
-    }
-  };
 
   return (
     <div aria-label="Управление картой" className="map-controls" role="group">
@@ -497,7 +315,7 @@ function MapControls({ onReset }: { onReset: () => void }) {
         className="size-10 rounded-lg bg-white text-foreground shadow-sm hover:bg-muted"
         onClick={(event) => {
           event.stopPropagation();
-          changeZoom("in");
+          map.zoomIn();
         }}
         size="icon"
         type="button"
@@ -510,7 +328,7 @@ function MapControls({ onReset }: { onReset: () => void }) {
         className="size-10 rounded-lg bg-white text-foreground shadow-sm hover:bg-muted"
         onClick={(event) => {
           event.stopPropagation();
-          changeZoom("out");
+          map.zoomOut();
         }}
         size="icon"
         type="button"
@@ -524,7 +342,7 @@ function MapControls({ onReset }: { onReset: () => void }) {
         className="size-10 rounded-lg bg-white text-foreground shadow-sm hover:bg-muted"
         onClick={(event) => {
           event.stopPropagation();
-          resetBounds();
+          onReset();
         }}
         size="icon"
         type="button"

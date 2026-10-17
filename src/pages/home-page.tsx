@@ -12,12 +12,12 @@ import { dashboardDataService } from "@/features/dashboard/services/dashboard-da
 import type { InventoryEvent } from "@/features/dashboard/types/inventory-event";
 import type { InventoryItem } from "@/features/dashboard/types/inventory";
 import type { Warehouse } from "@/features/dashboard/types/warehouse";
-import type { DemoUser } from "@/features/auth/services/auth-service";
+import type { AuthenticatedUser } from "@/features/auth/api/auth";
 import "@/features/dashboard/dashboard.css";
 
 type HomePageProps = {
-  user: DemoUser;
-  onLogout: () => void;
+  user: AuthenticatedUser;
+  onLogout: () => Promise<void>;
 };
 
 type SheetState = "closed" | "peek" | "expanded";
@@ -32,6 +32,7 @@ export function HomePage({ user, onLogout }: HomePageProps) {
   const [sheetState, setSheetState] = useState<SheetState>("closed");
   const [activeWarehouseId, setActiveWarehouseId] = useState<number | null>(null);
   const [resetKey, setResetKey] = useState(0);
+  const [logoutError, setLogoutError] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -109,7 +110,10 @@ export function HomePage({ user, onLogout }: HomePageProps) {
           <Button
             aria-label="Выйти из системы"
             className="size-9 rounded-lg"
-            onClick={onLogout}
+            onClick={() => {
+              setLogoutError(false);
+              void onLogout().catch(() => setLogoutError(true));
+            }}
             size="icon"
             title="Выйти"
             type="button"
@@ -118,6 +122,11 @@ export function HomePage({ user, onLogout }: HomePageProps) {
             <LogOut aria-hidden="true" size={17} />
           </Button>
         </div>
+        {logoutError && (
+          <p className="dashboard-logout-error" role="alert">
+            Не удалось завершить сеанс. Попробуйте ещё раз.
+          </p>
+        )}
       </header>
 
       <DashboardNavigation activeSection={activeSection} onNavigate={handleNavigation} />

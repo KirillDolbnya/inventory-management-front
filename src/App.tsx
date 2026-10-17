@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { Navigate, Route, Routes } from "react-router";
+import { signOut, type AuthenticatedUser } from "@/features/auth/api/auth";
 import { LoginPage } from "@/features/auth/pages/login-page";
-import type { DemoUser } from "@/features/auth/services/auth-service";
 
 const HomePage = lazy(() =>
   import("@/pages/home-page").then((module) => ({ default: module.HomePage })),
@@ -11,26 +11,31 @@ const WarehousePage = lazy(() =>
 );
 
 export default function App() {
-  const [demoUser, setDemoUser] = useState<DemoUser | null>(null);
+  const [user, setUser] = useState<AuthenticatedUser | null>(null);
+
+  const handleLogout = async () => {
+    await signOut();
+    setUser(null);
+  };
 
   return (
     <Routes>
       <Route
         path="/login"
         element={
-          demoUser ? (
+          user ? (
             <Navigate to="/" replace />
           ) : (
-            <LoginPage onAuthenticated={setDemoUser} />
+            <LoginPage onAuthenticated={setUser} />
           )
         }
       />
       <Route
         path="/"
         element={
-          demoUser ? (
+          user ? (
             <Suspense fallback={<main aria-busy="true" className="fixed inset-0 bg-[#eef0f2]" />}>
-              <HomePage user={demoUser} onLogout={() => setDemoUser(null)} />
+              <HomePage user={user} onLogout={handleLogout} />
             </Suspense>
           ) : (
             <Navigate to="/login" replace />
@@ -40,7 +45,7 @@ export default function App() {
       <Route
         path="/warehouses/:warehouseId"
         element={
-          demoUser ? (
+          user ? (
             <Suspense fallback={<main aria-busy="true" className="fixed inset-0 bg-[#f1f5f9]" />}>
               <WarehousePage />
             </Suspense>
@@ -49,7 +54,7 @@ export default function App() {
           )
         }
       />
-      <Route path="*" element={<Navigate to={demoUser ? "/" : "/login"} replace />} />
+      <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
     </Routes>
   );
 }

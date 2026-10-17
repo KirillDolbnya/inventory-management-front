@@ -6,7 +6,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8080/api}
     volumes:
       - .:/app
       - node_modules:/app/node_modules

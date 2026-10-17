@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ApiError } from "@/api/client";
 import { loginSchema, type LoginFormValues } from "@/features/auth/schema";
-import { signIn, type DemoUser } from "@/features/auth/services/auth-service";
+import { signIn, type AuthenticatedUser } from "@/features/auth/api/auth";
 
 type LoginPageProps = {
-  onAuthenticated: (user: DemoUser) => void;
+  onAuthenticated: (user: AuthenticatedUser) => void;
 };
 
 export function LoginPage({ onAuthenticated }: LoginPageProps) {
@@ -31,11 +32,34 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
     try {
       const user = await signIn(values);
       onAuthenticated(user);
-    } catch {
-      setError("root", {
-        type: "server",
-        message: "Не удалось выполнить вход. Попробуйте ещё раз.",
-      });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 422) {
+        const fieldErrors = error.payload?.errors;
+        const emailError = fieldErrors?.email?.[0];
+        const passwordError = fieldErrors?.password?.[0];
+        if (emailError) setError("email", { type: "server", message: emailError });
+        if (passwordError) setError("password", { type: "server", message: passwordError });
+        if (!emailError && !passwordError) {
+          setError("root", { type: "server", message: "Проверьте введённые данные." });
+        }
+      } else if (error instanceof ApiError && error.status === 401) {
+        setError("root", { type: "server", message: "Неверный email или пароль." });
+      } else if (error instanceof ApiError && error.kind === "network") {
+        setError("root", {
+          type: "server",
+          message: "Не удалось подключиться к серверу. Проверьте соединение и попробуйте снова.",
+        });
+      } else if (error instanceof ApiError && error.status === 419) {
+        setError("root", {
+          type: "server",
+          message: "Не удалось подтвердить запрос. Обновите страницу и попробуйте снова.",
+        });
+      } else {
+        setError("root", {
+          type: "server",
+          message: "Сервис входа временно недоступен. Попробуйте позже.",
+        });
+      }
     }
   };
 
@@ -136,9 +160,6 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
               </Button>
             </form>
 
-            <p className="mt-5 text-center text-xs leading-5 text-muted-foreground">
-              Демо-режим: подойдёт любой email и пароль от 8 символов.
-            </p>
           </CardContent>
         </Card>
       </div>
