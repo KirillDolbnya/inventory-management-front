@@ -13,9 +13,7 @@ docker run --rm -p 8080:80 inventory-management-front
 
 Главная страница показывает склады на OpenStreetMap, список mock-инвентаря и события. Для отображения карты используется публичный слой тайлов OpenStreetMap с атрибуцией; для production-нагрузки можно указать другой совместимый источник в `VITE_MAP_TILE_URL`.
 
-Авторизация подключена к Laravel API через cookie-сессию Sanctum. Frontend сначала получает `/sanctum/csrf-cookie`, затем отправляет `POST /api/auth/sign-in`; все запросы передают cookies. Укажите адрес API в `VITE_API_URL` (по умолчанию для локального backend — `http://localhost:8080/api`). Backend должен разрешать origin `http://localhost:5173` с credentials и включать `localhost:5173` в `SANCTUM_STATEFUL_DOMAINS`.
-
-Сейчас backend не предоставляет endpoint для чтения текущего пользователя. Поэтому после обновления страницы UI безопасно возвращается на `/login`; cookie-сессия не подменяется флагом в браузерном хранилище. Для восстановления входа нужен документированный endpoint, возвращающий текущего пользователя.
+Авторизация подключена к Laravel API через cookie-сессию Sanctum. При входе frontend получает `/sanctum/csrf-cookie`, затем отправляет `POST /api/auth/sign-in`. При запуске приложения состояние сессии восстанавливается через `GET /api/auth/me`, выход выполняется через `POST /api/auth/logout`. Все запросы передают cookies; токены и пароль в браузерном хранилище не сохраняются. Укажите адрес API в `VITE_API_URL` (по умолчанию для локального backend — `http://localhost:8080/api`). Backend должен разрешать origin `http://localhost:5173` с credentials и включать `localhost:5173` в `SANCTUM_STATEFUL_DOMAINS`.
 
 Склады, инвентарь и события остаются на mock-данных. DaData и остальные backend endpoints пока не подключены.
 

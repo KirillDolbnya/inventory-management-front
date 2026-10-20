@@ -8,7 +8,7 @@ import "leaflet/dist/leaflet.css";
 
 const defaultMarkerIcon = createWarehouseIcon(false);
 const activeMarkerIcon = createWarehouseIcon(true);
-const defaultCenter: [number, number] = [55.7558, 37.6173];
+const DEFAULT_MAP_CENTER: [number, number] = [45.0445, 41.969];
 
 type WarehouseMapProps = {
   warehouses: Warehouse[];
@@ -54,7 +54,7 @@ export function WarehouseMap({
 
   return (
     <MapContainer
-      center={defaultCenter}
+      center={DEFAULT_MAP_CENTER}
       className="dashboard-map"
       attributionControl={false}
       zoom={12}

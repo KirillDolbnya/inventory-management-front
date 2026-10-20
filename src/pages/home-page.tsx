@@ -100,7 +100,7 @@ export function HomePage({ user, onLogout }: HomePageProps) {
           <span className="min-w-0">
             <span className="block text-sm font-semibold leading-5">Склад</span>
             <span className="block truncate text-xs leading-4 text-muted-foreground">
-              Москва · {warehouses.length} склада
+              Ставрополь, Россия · {warehouses.length} склада
             </span>
           </span>
         </div>

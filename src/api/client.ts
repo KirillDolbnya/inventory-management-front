@@ -9,7 +9,7 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly payload?: ApiErrorPayload,
-    readonly kind: "http" | "network" | "configuration" = "http",
+    readonly kind: "http" | "network" | "configuration" | "response" = "http",
   ) {
     super(message);
     this.name = "ApiError";

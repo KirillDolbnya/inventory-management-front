@@ -3,33 +3,34 @@ import type { InventoryItem } from "@/features/dashboard/types/inventory";
 import type { Warehouse } from "@/features/dashboard/types/warehouse";
 
 export const mockWarehouses: Warehouse[] = [
+  // Fictional demo warehouses, placed at real Stavropol addresses for map testing.
   {
     id: 1,
     name: "Основной склад",
-    address: "Москва, ул. Складская, 12",
-    latitude: 55.7558,
-    longitude: 37.6173,
+    address: "Ставрополь, ул. Ленина, 273",
+    latitude: 45.038723,
+    longitude: 41.954612,
   },
   {
     id: 2,
     name: "Склад №2",
-    address: "Москва, ул. Промышленная, 8",
-    latitude: 55.7358,
-    longitude: 37.6573,
+    address: "Ставрополь, просп. Кулакова, 8",
+    latitude: 45.0523,
+    longitude: 41.9128,
   },
   {
     id: 3,
     name: "Северный склад",
-    address: "Москва, Ленинградское шоссе, 46",
-    latitude: 55.8234,
-    longitude: 37.4932,
+    address: "Ставрополь, ул. Дзержинского, 102",
+    latitude: 45.044559,
+    longitude: 41.974671,
   },
   {
     id: 4,
     name: "Западный склад",
-    address: "Москва, ул. Рябиновая, 44",
-    latitude: 55.7044,
-    longitude: 37.4304,
+    address: "Ставрополь, ул. 50 лет ВЛКСМ, 41/1",
+    latitude: 45.00934,
+    longitude: 41.91961,
   },
 ];
 
