@@ -518,10 +518,6 @@ function WarehouseCameraControls({
         const point = getCellWorldPosition(layout, racks, rackId, cellId);
         if (!point) return false;
 
-        const direction = camera.getWorldDirection(new THREE.Vector3());
-        const depth = point.clone().sub(camera.position).dot(direction);
-        if (depth <= 0) return false;
-
         const shift = point.sub(controls.target);
         camera.position.add(shift);
         controls.target.add(shift);

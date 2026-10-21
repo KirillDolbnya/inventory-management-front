@@ -96,10 +96,11 @@ export function WarehousePage() {
   const warehouseInventory = useMemo<WarehouseInventoryItem[]>(() => {
     if (!pageData) return [];
     return pageData.items.flatMap((item) => {
-      const warehouseQuantity = item.placements
-        .filter((placement) => placement.warehouse.id === warehouseId)
-        .reduce((total, placement) => total + placement.quantity, 0);
-      return warehouseQuantity > 0 ? [{ ...item, warehouse_quantity: warehouseQuantity }] : [];
+      const placements = item.placements.filter(
+        (placement) => placement.warehouse.id === warehouseId && placement.quantity > 0,
+      );
+      const warehouseQuantity = placements.reduce((total, placement) => total + placement.quantity, 0);
+      return warehouseQuantity > 0 ? [{ ...item, placements, warehouse_quantity: warehouseQuantity }] : [];
     });
   }, [pageData, warehouseId]);
 
@@ -292,6 +293,31 @@ export function WarehousePage() {
     setSheetState("peek");
     void loadCellData(cell.id, false);
   }, [isPickingTarget, loadCellData, selectedCell]);
+
+  const handleInventoryPlacementOpen = useCallback((rackId: number, cellId: number) => {
+    if (!pageData?.layout) return;
+    const rack = pageData.racks.find((candidate) => candidate.id === rackId);
+    const cell = rack?.cells.find((candidate) => candidate.id === cellId);
+    if (!rack || !cell || !pageData.layout.racks.some((layoutRack) => layoutRack.rackId === rack.id)) {
+      setDeepLinkNotice("Не удалось найти эту ячейку в планировке склада. Обновите данные и попробуйте снова.");
+      return;
+    }
+
+    selectedCellIdRef.current = cell.id;
+    setSelectedCell({ rack, cell });
+    setCellView("details");
+    setTransferItem(null);
+    setUnplaceItem(null);
+    setIsPickingTarget(false);
+    setPickedTarget(null);
+    setSelectionNotice(null);
+    setPlacementNotice(null);
+    setDeepLinkNotice(null);
+    setActivePanel("cell");
+    setSheetState("peek");
+    setFocusCellRequest({ rackId: rack.id, cellId: cell.id });
+    void loadCellData(cell.id, false);
+  }, [loadCellData, pageData]);
 
   const closePanel = useCallback(() => {
     setIsPickingTarget(false);
@@ -620,6 +646,7 @@ export function WarehousePage() {
         }}
         onCellRetry={retryCellData}
         onClose={closePanel}
+        onOpenInventoryPlacement={handleInventoryPlacementOpen}
         onOpenPlacement={() => {
           setPlacementNotice(null);
           setCellView("place");

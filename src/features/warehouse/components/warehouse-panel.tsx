@@ -36,6 +36,7 @@ type WarehousePanelProps = {
   onSheetStateChange: (state: SheetState) => void;
   onCellRetry: () => void;
   onOpenPlacement: () => void;
+  onOpenInventoryPlacement: (rackId: number, cellId: number) => void;
   onBackToCell: () => void;
   onPlaceInventory: (inventoryId: number, quantity: number) => Promise<void>;
   onOpenTransfer: (item: WarehouseCellItem) => void;
@@ -68,6 +69,7 @@ export function WarehousePanel({
   onSheetStateChange,
   onCellRetry,
   onOpenPlacement,
+  onOpenInventoryPlacement,
   onBackToCell,
   onPlaceInventory,
   onOpenTransfer,
@@ -208,7 +210,7 @@ export function WarehousePanel({
             />
           )
         ) : (
-          <WarehouseInventoryList items={inventoryItems} />
+          <WarehouseInventoryList items={inventoryItems} onOpenPlacement={onOpenInventoryPlacement} />
         )}
       </div>
     </section>
