@@ -10,8 +10,8 @@ type InventoryDetailProps = {
 
 export function InventoryDetail({ item, onBack, onOpenPlacement }: InventoryDetailProps) {
   return (
-    <div className="flex min-h-full flex-col">
-      <div className="px-5 pb-5 pt-3 sm:px-6">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 px-5 pb-5 pt-3 sm:px-6">
         <Button className="-ml-2 h-10 rounded-lg px-2 text-muted-foreground" onClick={onBack} type="button" variant="ghost">
           <ArrowLeft aria-hidden="true" size={16} />
           Назад к списку
@@ -29,13 +29,18 @@ export function InventoryDetail({ item, onBack, onOpenPlacement }: InventoryDeta
         </dl>
       </div>
 
-      <div className="border-t border-border px-5 pb-5 pt-4 sm:px-6">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-border px-5 pb-5 pt-4 [-webkit-overflow-scrolling:touch] sm:px-6">
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <h4 className="text-sm font-semibold">Размещения</h4>
           <span className="text-xs text-muted-foreground">
             {item.placements.length} {getCountWord(item.placements.length)}
           </span>
         </div>
+        {item.placements.length > 1 && (
+          <p className="-mt-1 mb-3 text-xs leading-5 text-muted-foreground">
+            Выберите ячейку, чтобы открыть её на складе.
+          </p>
+        )}
 
         {item.placements.length ? (
           <ul className="space-y-2">

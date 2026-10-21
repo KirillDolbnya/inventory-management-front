@@ -511,9 +511,13 @@
 }
 
 .inventory-create-dialog {
-  width: min(100% - 32px, 480px);
+  position: fixed;
+  inset: 0;
+  width: min(calc(100vw - 32px), 480px);
   max-width: 480px;
   max-height: min(700px, calc(100dvh - 40px));
+  margin: auto;
+  box-sizing: border-box;
   overflow: hidden;
   border: 1px solid #e4e4e7;
   border-radius: 18px;
@@ -875,6 +879,7 @@
     max-width: none;
     height: 100dvh;
     max-height: none;
+    margin: 0;
     border: 0;
     border-radius: 0;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
