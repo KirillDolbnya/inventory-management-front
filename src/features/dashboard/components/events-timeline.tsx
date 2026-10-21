@@ -90,11 +90,11 @@ export function EventsTimeline({ events, onSelectEvent }: EventsTimelineProps) {
         return (
           <li className="relative flex gap-3 pb-5 last:pb-0" key={event.id}>
             {index < sortedEvents.length - 1 && (
-              <span aria-hidden="true" className="absolute bottom-0 left-[17px] top-9 w-px bg-border" />
+              <span aria-hidden="true" className="absolute bottom-0 left-[26px] top-9 w-px bg-border" />
             )}
             {onSelectEvent ? (
               <button
-                className="flex w-full min-w-0 gap-3 rounded-lg py-1 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex w-full min-w-0 gap-3 rounded-lg px-2 py-1 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 onClick={() => onSelectEvent(event.id)}
                 type="button"
               >
