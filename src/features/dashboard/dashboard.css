@@ -15,10 +15,13 @@
 }
 
 .event-create-dialog {
-  width: min(940px, calc(100vw - 32px));
-  height: min(820px, calc(100dvh - 32px));
-  max-width: none;
-  max-height: none;
+  position: fixed;
+  inset: 3vh 2vw;
+  width: 96vw;
+  height: 94dvh;
+  max-width: 1200px;
+  max-height: 1000px;
+  margin: auto;
   overflow: hidden;
   padding: 0;
   border: 1px solid #e4e4e7;
@@ -127,13 +130,25 @@
   background: #fff;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .event-create-dialog {
+    inset: 2vh 1.5vw;
+    width: 97vw;
+    height: 96dvh;
+    max-width: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .event-create-dialog {
+    inset: 0;
     width: 100vw;
     height: 100dvh;
     margin: 0;
     border: 0;
     border-radius: 0;
+    max-width: none;
+    max-height: none;
   }
 
   .event-create-dialog__header {

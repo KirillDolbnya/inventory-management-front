@@ -37,13 +37,13 @@ export function InventoryList({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="px-5 pb-4 pt-4 sm:px-6">
+      <div className="flex flex-col gap-3 px-5 pb-4 pt-4 sm:px-6">
         <Button className="h-11 w-full justify-center rounded-lg" onClick={onAdd} type="button">
           <Plus aria-hidden="true" size={16} />
           Добавить инвентарь
         </Button>
         {notice && (
-          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-800" role="status">
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-800" role="status">
             {notice}
           </p>
         )}
