@@ -9,6 +9,7 @@ export type AuthenticatedUser = {
 export type SignInCredentials = {
   email: string;
   password: string;
+  remember: boolean;
 };
 
 function parseAuthenticatedUser(value: unknown): AuthenticatedUser {
@@ -30,7 +31,7 @@ export async function signIn(credentials: SignInCredentials) {
 
   const user = await requestApi<unknown>("auth/sign-in", {
     method: "POST",
-    body: JSON.stringify({ ...credentials, remember: false }),
+    body: JSON.stringify(credentials),
   });
 
   return parseAuthenticatedUser(user);

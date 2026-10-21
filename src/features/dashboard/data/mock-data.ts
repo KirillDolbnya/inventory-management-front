@@ -1,4 +1,3 @@
-import type { InventoryEvent } from "@/features/dashboard/types/inventory-event";
 import type { InventoryItem } from "@/features/dashboard/types/inventory";
 import type { Warehouse } from "@/features/dashboard/types/warehouse";
 
@@ -33,7 +32,6 @@ export const mockWarehouses: Warehouse[] = [
     longitude: 41.91961,
   },
 ];
-
 export const mockInventoryItems: InventoryItem[] = [
   {
     id: 1,
@@ -194,71 +192,5 @@ export const mockInventoryItems: InventoryItem[] = [
         cell: { id: 161, number: 3, level: 2, position: 3 },
       },
     ],
-  },
-];
-
-export const mockInventoryEvents: InventoryEvent[] = [
-  {
-    id: 1,
-    title: "Поступление инвентаря",
-    description: "Добавлено 48 рулонов стрейч-плёнки на Основной склад",
-    created_at: "2026-10-10T13:42:00+03:00",
-    warehouse_id: 1,
-  },
-  {
-    id: 2,
-    title: "Изменение количества",
-    description: "Обновлён остаток упаковочных коробок на Складе №2",
-    created_at: "2026-10-10T11:18:00+03:00",
-    warehouse_id: 2,
-  },
-  {
-    id: 3,
-    title: "Размещение на складе",
-    description: "Паллеты размещены в секции D-01 Западного склада",
-    created_at: "2026-10-09T16:05:00+03:00",
-    warehouse_id: 4,
-  },
-  {
-    id: 4,
-    title: "Новый склад",
-    description: "Добавлен Северный склад",
-    created_at: "2026-10-09T10:24:00+03:00",
-    warehouse_id: 3,
-  },
-  {
-    id: 5,
-    title: "Инвентарь перемещён",
-    description: "60 коробок перемещены на Основной склад",
-    created_at: "2026-10-08T14:50:00+03:00",
-    warehouse_id: 1,
-  },
-  {
-    id: 6,
-    title: "Поступление инвентаря",
-    description: "Получена партия упаковочного скотча",
-    created_at: "2026-10-08T09:12:00+03:00",
-    warehouse_id: 1,
-  },
-  {
-    id: 7,
-    title: "Обновление адреса",
-    description: "Уточнён адрес Западного склада",
-    created_at: "2026-10-07T17:36:00+03:00",
-    warehouse_id: 4,
-  },
-  {
-    id: 8,
-    title: "Инвентарь размещён",
-    description: "Контейнеры и перчатки добавлены в секции B-01 и B-02",
-    created_at: "2026-10-06T15:28:00+03:00",
-    warehouse_id: 1,
-  },
-  {
-    id: 9,
-    title: "Поступление инвентаря",
-    description: "Принята партия маркировочных этикеток",
-    created_at: "2026-10-06T09:40:00+03:00",
-    warehouse_id: 1,
   },
 ];

@@ -2,8 +2,13 @@ import { X } from "lucide-react";
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { EventsTimeline } from "@/features/dashboard/components/events-timeline";
+import { CellPlacementForm } from "@/features/warehouse/components/cell-placement-form";
+import { CellTransferForm } from "@/features/warehouse/components/cell-transfer-form";
+import { CellUnplaceForm } from "@/features/warehouse/components/cell-unplace-form";
 import { CellInventoryList, WarehouseInventoryList } from "@/features/warehouse/components/warehouse-inventory-list";
 import type { InventoryEvent } from "@/features/dashboard/types/inventory-event";
+import type { InventoryItem } from "@/features/dashboard/types/inventory";
+import type { Warehouse } from "@/features/dashboard/types/warehouse";
 import type { Cell, Rack, WarehouseCellItem, WarehouseInventoryItem, WarehousePanel } from "@/features/warehouse/types";
 
 type SheetState = "closed" | "peek" | "expanded";
@@ -14,9 +19,30 @@ type WarehousePanelProps = {
   inventoryItems: WarehouseInventoryItem[];
   events: InventoryEvent[];
   selectedCell: { rack: Rack; cell: Cell } | null;
+  currentWarehouse: Warehouse;
+  currentRacks: Rack[];
   cellItems: WarehouseCellItem[];
+  availableItems: InventoryItem[];
+  cellView: "details" | "place" | "transfer" | "unplace";
+  transferItem: WarehouseCellItem | null;
+  unplaceItem: WarehouseCellItem | null;
+  pickedTarget: { rack: Rack; cell: Cell } | null;
+  selectionNotice: string | null;
+  isPickingTarget: boolean;
+  cellItemsLoading: boolean;
+  cellItemsError: string | null;
+  placementNotice: string | null;
   onClose: () => void;
   onSheetStateChange: (state: SheetState) => void;
+  onCellRetry: () => void;
+  onOpenPlacement: () => void;
+  onBackToCell: () => void;
+  onPlaceInventory: (inventoryId: number, quantity: number) => Promise<void>;
+  onOpenTransfer: (item: WarehouseCellItem) => void;
+  onOpenUnplace: (item: WarehouseCellItem) => void;
+  onPickTargetOnModel: () => void;
+  onTransferInventory: (placementId: number, targetCellId: number, quantity: number) => Promise<void>;
+  onUnplaceInventory: (placementId: number, quantity: number) => Promise<void>;
 };
 
 export function WarehousePanel({
@@ -25,9 +51,30 @@ export function WarehousePanel({
   inventoryItems,
   events,
   selectedCell,
+  currentWarehouse,
+  currentRacks,
   cellItems,
+  availableItems,
+  cellView,
+  transferItem,
+  unplaceItem,
+  pickedTarget,
+  selectionNotice,
+  isPickingTarget,
+  cellItemsLoading,
+  cellItemsError,
+  placementNotice,
   onClose,
   onSheetStateChange,
+  onCellRetry,
+  onOpenPlacement,
+  onBackToCell,
+  onPlaceInventory,
+  onOpenTransfer,
+  onOpenUnplace,
+  onPickTargetOnModel,
+  onTransferInventory,
+  onUnplaceInventory,
 }: WarehousePanelProps) {
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -74,13 +121,14 @@ export function WarehousePanel({
 
   return (
     <section
-      aria-hidden={!isOpen}
+      aria-hidden={!isOpen || isPickingTarget}
       aria-label={title}
       className="warehouse-panel"
       data-dragging={isDragging}
       data-open={isOpen}
+      data-picking-target={isPickingTarget}
       data-sheet={sheetState}
-      inert={!isOpen}
+      inert={!isOpen || isPickingTarget}
       style={{ "--warehouse-drag-offset": `${isDragging ? dragOffset : 0}px` } as CSSProperties}
     >
       <div className="warehouse-panel__grab-area">
@@ -124,7 +172,41 @@ export function WarehousePanel({
         {activePanel === "events" ? (
           <EventsTimeline events={events} />
         ) : activePanel === "cell" && selectedCell ? (
-          <CellInventoryList rack={selectedCell.rack} cell={selectedCell.cell} items={cellItems} />
+          cellView === "place" ? (
+            <CellPlacementForm inventoryItems={availableItems} onBack={onBackToCell} onPlace={onPlaceInventory} />
+          ) : cellView === "transfer" && transferItem ? (
+            <CellTransferForm
+              item={transferItem}
+              onBack={onBackToCell}
+              onPickOnModel={onPickTargetOnModel}
+              onTransfer={onTransferInventory}
+              pickedTarget={pickedTarget}
+              selectionNotice={selectionNotice}
+              sourceCell={selectedCell.cell}
+              sourceRack={selectedCell.rack}
+              sourceRacks={currentRacks}
+              sourceWarehouse={currentWarehouse}
+            />
+          ) : cellView === "unplace" && unplaceItem ? (
+            <CellUnplaceForm
+              item={unplaceItem}
+              onBack={onBackToCell}
+              onUnplace={onUnplaceInventory}
+            />
+          ) : (
+            <CellInventoryList
+              cell={selectedCell.cell}
+              error={cellItemsError}
+              isLoading={cellItemsLoading}
+              items={cellItems}
+              notice={placementNotice}
+              onPlace={onOpenPlacement}
+              onRetry={onCellRetry}
+              onTransfer={onOpenTransfer}
+              onUnplace={onOpenUnplace}
+              rack={selectedCell.rack}
+            />
+          )
         ) : (
           <WarehouseInventoryList items={inventoryItems} />
         )}

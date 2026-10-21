@@ -1,6 +1,6 @@
-import { Grid, OrbitControls } from "@react-three/drei";
+import { Grid, OrbitControls, useGLTF } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { Cell, Rack, WarehouseLayout } from "@/features/warehouse/types";
@@ -9,6 +9,7 @@ const SHELF_BASE_Y = 0.36;
 const SHELF_BOARD_CENTER_OFFSET = 0.075;
 const SHELF_BOARD_THICKNESS = 0.065;
 const RACK_POST_WIDTH = 0.09;
+const EMPTY_OCCUPIED_CELL_IDS = new Set<number>();
 
 function getRackShelfY(level: number, levelSpacing: number) {
   return SHELF_BASE_Y + (level - 1) * levelSpacing;
@@ -18,12 +19,16 @@ export interface WarehouseCameraApi {
   reset: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  focusCell: (rackId: number, cellId: number) => boolean;
 }
 
 type WarehouseSceneProps = {
   layout: WarehouseLayout;
   racks: Rack[];
   selectedCellId: number | null;
+  focusCellRequest?: { rackId: number; cellId: number } | null;
+  targetCellId?: number | null;
+  occupiedCellIds?: Set<number>;
   cameraApiRef: React.MutableRefObject<WarehouseCameraApi | null>;
   onCellSelect: (rack: Rack, cell: Cell) => void;
 };
@@ -32,9 +37,22 @@ export function WarehouseScene({
   layout,
   racks,
   selectedCellId,
+  focusCellRequest = null,
+  targetCellId = null,
+  occupiedCellIds = EMPTY_OCCUPIED_CELL_IDS,
   cameraApiRef,
   onCellSelect,
 }: WarehouseSceneProps) {
+  const [modelRoom, setModelRoom] = useState<WarehouseLayout["room"] | null>(null);
+  const [cameraInitVersion, setCameraInitVersion] = useState(0);
+  const markCameraInitialized = useCallback(() => {
+    setCameraInitVersion((version) => version + 1);
+  }, []);
+  const cameraLayout = useMemo(
+    () => modelRoom ? { ...layout, room: modelRoom } : layout,
+    [layout, modelRoom],
+  );
+
   return (
     <Canvas
       camera={{ fov: 38, near: 0.1, far: 180, position: [31, 24, 31] }}
@@ -50,18 +68,42 @@ export function WarehouseScene({
         intensity={2.1}
         position={[16, 24, 15]}
       />
-      <WarehouseRoom layout={layout} racks={racks} selectedCellId={selectedCellId} onCellSelect={onCellSelect} />
-      <WarehouseCameraControls layout={layout} cameraApiRef={cameraApiRef} />
+      <WarehouseRoom
+        layout={layout}
+        modelUrl={layout.model?.url}
+        onModelRoomChange={setModelRoom}
+        racks={racks}
+        selectedCellId={selectedCellId}
+        targetCellId={targetCellId}
+        occupiedCellIds={occupiedCellIds}
+        onCellSelect={onCellSelect}
+      />
+      <WarehouseCameraControls
+        cameraApiRef={cameraApiRef}
+        cameraInitVersion={cameraInitVersion}
+        focusCellRequest={focusCellRequest}
+        layout={cameraLayout}
+        racks={racks}
+        onCameraInitialized={markCameraInitialized}
+      />
     </Canvas>
   );
 }
 
 function WarehouseRoom({
   layout,
+  modelUrl,
+  onModelRoomChange,
   racks,
   selectedCellId,
+  targetCellId,
+  occupiedCellIds,
   onCellSelect,
-}: Pick<WarehouseSceneProps, "layout" | "racks" | "selectedCellId" | "onCellSelect">) {
+}: Pick<WarehouseSceneProps, "layout" | "racks" | "selectedCellId" | "targetCellId" | "onCellSelect"> & {
+  occupiedCellIds: Set<number>;
+  modelUrl?: string;
+  onModelRoomChange: (room: WarehouseLayout["room"]) => void;
+}) {
   const rackLayouts = useMemo(
     () => new Map(layout.racks.map((rackLayout) => [rackLayout.rackId, rackLayout])),
     [layout.racks],
@@ -78,35 +120,43 @@ function WarehouseRoom({
         fadeStrength={1.35}
         followCamera={false}
         infiniteGrid
-        position={[0, -0.11, 0]}
+        position={[0, -0.13, 0]}
         sectionColor="#a9b7c7"
         sectionSize={5}
         sectionThickness={0.7}
       />
 
-      <mesh position={[0, -0.055, 0]}>
-        <boxGeometry args={[layout.room.width, 0.11, layout.room.length]} />
-        <meshStandardMaterial color="#e5e9ee" roughness={0.88} />
-      </mesh>
-
-      {layout.walls.map((wall) => (
-        <WarehouseWall key={wall.id} wall={wall} />
-      ))}
-
-      {layout.columns.map((column) => (
-        <group key={column.id} position={[column.position.x, 0, column.position.z]}>
-          <mesh position={[0, column.dimensions.height / 2, 0]}>
-            <boxGeometry
-              args={[column.dimensions.width, column.dimensions.height, column.dimensions.depth]}
-            />
-            <meshStandardMaterial color="#aeb9c6" roughness={0.78} />
+      {modelUrl ? (
+        <Suspense fallback={null}>
+          <WarehouseModel modelUrl={modelUrl} onRoomChange={onModelRoomChange} />
+        </Suspense>
+      ) : (
+        <>
+          <mesh position={[0, -0.055, 0]}>
+            <boxGeometry args={[layout.room.width, 0.11, layout.room.length]} />
+            <meshStandardMaterial color="#e5e9ee" roughness={0.88} />
           </mesh>
-          <mesh position={[0, 0.08, 0]}>
-            <boxGeometry args={[column.dimensions.width + 0.08, 0.16, column.dimensions.depth + 0.08]} />
-            <meshStandardMaterial color="#d4dbe3" roughness={0.7} />
-          </mesh>
-        </group>
-      ))}
+
+          {layout.walls.map((wall) => (
+            <WarehouseWall key={wall.id} wall={wall} />
+          ))}
+
+          {layout.columns.map((column) => (
+            <group key={column.id} position={[column.position.x, 0, column.position.z]}>
+              <mesh position={[0, column.dimensions.height / 2, 0]}>
+                <boxGeometry
+                  args={[column.dimensions.width, column.dimensions.height, column.dimensions.depth]}
+                />
+                <meshStandardMaterial color="#aeb9c6" roughness={0.78} />
+              </mesh>
+              <mesh position={[0, 0.08, 0]}>
+                <boxGeometry args={[column.dimensions.width + 0.08, 0.16, column.dimensions.depth + 0.08]} />
+                <meshStandardMaterial color="#d4dbe3" roughness={0.7} />
+              </mesh>
+            </group>
+          ))}
+        </>
+      )}
 
       {racks.map((rack) => {
         const rackLayout = rackLayouts.get(rack.id);
@@ -117,12 +167,35 @@ function WarehouseRoom({
             layout={rackLayout}
             rack={rack}
             selectedCellId={selectedCellId}
+            targetCellId={targetCellId ?? null}
+            occupiedCellIds={occupiedCellIds}
             onCellSelect={onCellSelect}
           />
         );
       })}
     </>
   );
+}
+
+function WarehouseModel({
+  modelUrl,
+  onRoomChange,
+}: {
+  modelUrl: string;
+  onRoomChange: (room: WarehouseLayout["room"]) => void;
+}) {
+  const { scene } = useGLTF(modelUrl);
+  const modelScene = useMemo(() => scene.clone(true), [scene]);
+
+  useEffect(() => {
+    const bounds = new THREE.Box3().setFromObject(modelScene);
+    const size = bounds.getSize(new THREE.Vector3());
+    if (size.x > 0 && size.y > 0 && size.z > 0) {
+      onRoomChange({ width: size.x, height: size.y, length: size.z });
+    }
+  }, [modelScene, onRoomChange]);
+
+  return <primitive object={modelScene} />;
 }
 
 function WarehouseWall({ wall }: { wall: WarehouseLayout["walls"][number] }) {
@@ -157,11 +230,15 @@ function WarehouseRack({
   layout,
   rack,
   selectedCellId,
+  targetCellId,
+  occupiedCellIds,
   onCellSelect,
 }: {
   layout: WarehouseLayout["racks"][number];
   rack: Rack;
   selectedCellId: number | null;
+  targetCellId: number | null;
+  occupiedCellIds: Set<number>;
   onCellSelect: (rack: Rack, cell: Cell) => void;
 }) {
   const { width, depth, height } = layout.dimensions;
@@ -170,7 +247,10 @@ function WarehouseRack({
   const bayWidth = width / rack.cells_per_level;
 
   return (
-    <group position={[layout.position.x, 0, layout.position.z]} rotation={[0, layout.rotation, 0]}>
+    <group
+      position={[layout.position.x, layout.position.y, layout.position.z]}
+      rotation={[0, THREE.MathUtils.degToRad(layout.rotation_y_deg), 0]}
+    >
       <mesh position={[-width / 2 + 0.045, height / 2, -depth / 2 + 0.045]}>
         <boxGeometry args={[RACK_POST_WIDTH, height, RACK_POST_WIDTH]} />
         <meshStandardMaterial color="#526171" metalness={0.42} roughness={0.5} />
@@ -247,6 +327,8 @@ function WarehouseRack({
         levelSpacing={levelSpacing}
         levelsCount={rack.levels_count}
         selectedCellId={selectedCellId}
+        targetCellId={targetCellId}
+        occupiedCellIds={occupiedCellIds}
         width={width}
         onCellSelect={(cell) => onCellSelect(rack, cell)}
       />
@@ -264,6 +346,8 @@ function CellMarkers({
   levelSpacing,
   levelsCount,
   selectedCellId,
+  targetCellId,
+  occupiedCellIds,
   onCellSelect,
 }: {
   cells: Cell[];
@@ -273,6 +357,8 @@ function CellMarkers({
   levelSpacing: number;
   levelsCount: number;
   selectedCellId: number | null;
+  targetCellId: number | null;
+  occupiedCellIds: Set<number>;
   onCellSelect: (cell: Cell) => void;
 }) {
   const markersRef = useRef<THREE.InstancedMesh>(null);
@@ -289,7 +375,7 @@ function CellMarkers({
     const bayWidth = width / cellsPerLevel;
 
     cells.forEach((cell, index) => {
-      const scale = cell.id === selectedCellId ? 1.34 : cell.id === hoveredCellId ? 1.2 : 1;
+      const scale = cell.id === targetCellId ? 1.46 : cell.id === selectedCellId ? 1.34 : cell.id === hoveredCellId ? 1.2 : 1;
       const bayLeft = cell.position === 1
         ? -width / 2 + RACK_POST_WIDTH
         : -width / 2 + bayWidth * (cell.position - 1);
@@ -309,7 +395,17 @@ function CellMarkers({
       dummy.updateMatrix();
       mesh?.setMatrixAt(index, dummy.matrix);
       hitTargets?.setMatrixAt(index, dummy.matrix);
-      markerColor.set(cell.id === selectedCellId ? "#1d4ed8" : cell.id === hoveredCellId ? "#60a5fa" : "#4f9cf9");
+      markerColor.set(
+        cell.id === targetCellId
+          ? "#d97706"
+          : cell.id === selectedCellId
+            ? "#1d4ed8"
+            : cell.id === hoveredCellId
+            ? "#60a5fa"
+            : occupiedCellIds.has(cell.id)
+              ? "#3f9b72"
+              : "#a1a1aa",
+      );
       mesh?.setColorAt(index, markerColor);
     });
 
@@ -318,7 +414,7 @@ function CellMarkers({
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
     if (hitTargets) hitTargets.instanceMatrix.needsUpdate = true;
-  }, [cells, cellsPerLevel, dummy, height, hoveredCellId, levelSpacing, levelsCount, markerColor, selectedCellId, width]);
+  }, [cells, cellsPerLevel, dummy, height, hoveredCellId, levelSpacing, levelsCount, markerColor, occupiedCellIds, selectedCellId, targetCellId, width]);
 
   useLayoutEffect(updateInstances, [updateInstances]);
 
@@ -390,9 +486,17 @@ function WarehouseRackLabel({ code, height }: { code: string; height: number }) 
 
 function WarehouseCameraControls({
   layout,
+  racks,
+  focusCellRequest,
+  cameraInitVersion,
+  onCameraInitialized,
   cameraApiRef,
-}: Pick<WarehouseSceneProps, "layout" | "cameraApiRef">) {
+}: Pick<WarehouseSceneProps, "layout" | "racks" | "focusCellRequest" | "cameraApiRef"> & {
+  cameraInitVersion: number;
+  onCameraInitialized: () => void;
+}) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
+  const { camera } = useThree();
   const connectControls = useCallback((controls: OrbitControlsImpl | null) => {
     controlsRef.current = controls;
     if (!controls) {
@@ -409,8 +513,28 @@ function WarehouseCameraControls({
         controls.dollyIn(1.2);
         controls.update();
       },
+      focusCell: (rackId, cellId) => {
+        if (!(camera instanceof THREE.PerspectiveCamera)) return false;
+        const point = getCellWorldPosition(layout, racks, rackId, cellId);
+        if (!point) return false;
+
+        const direction = camera.getWorldDirection(new THREE.Vector3());
+        const depth = point.clone().sub(camera.position).dot(direction);
+        if (depth <= 0) return false;
+
+        const shift = point.sub(controls.target);
+        camera.position.add(shift);
+        controls.target.add(shift);
+        controls.update();
+        return true;
+      },
     };
-  }, [cameraApiRef]);
+  }, [camera, cameraApiRef, layout, racks]);
+
+  useEffect(() => {
+    if (!focusCellRequest) return;
+    cameraApiRef.current?.focusCell(focusCellRequest.rackId, focusCellRequest.cellId);
+  }, [cameraApiRef, cameraInitVersion, focusCellRequest?.cellId, focusCellRequest?.rackId]);
 
   return (
     <>
@@ -425,7 +549,11 @@ function WarehouseCameraControls({
         ref={connectControls}
         target={[0, 1.35, 0]}
       />
-      <InitialCamera layout={layout} controlsRef={controlsRef} />
+      <InitialCamera
+        layout={layout}
+        controlsRef={controlsRef}
+        onInitialized={onCameraInitialized}
+      />
     </>
   );
 }
@@ -433,9 +561,11 @@ function WarehouseCameraControls({
 function InitialCamera({
   layout,
   controlsRef,
+  onInitialized,
 }: {
   layout: WarehouseLayout;
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
+  onInitialized: () => void;
 }) {
   const { camera, size } = useThree();
 
@@ -472,7 +602,50 @@ function InitialCamera({
       controls.update();
       controls.saveState();
     }
-  }, [camera, controlsRef, layout.room.height, layout.room.length, layout.room.width, size.height, size.width]);
+    onInitialized();
+  }, [camera, controlsRef, layout.room.height, layout.room.length, layout.room.width, onInitialized, size.height, size.width]);
 
   return null;
+}
+
+function getCellWorldPosition(
+  layout: WarehouseLayout,
+  racks: Rack[],
+  rackId: number,
+  cellId: number,
+) {
+  const rack = racks.find((candidate) => candidate.id === rackId);
+  const rackLayout = layout.racks.find((candidate) => candidate.rackId === rackId);
+  const cell = rack?.cells.find((candidate) => candidate.id === cellId);
+  if (!rack || !rackLayout || !cell || rack.cells_per_level < 1) return null;
+
+  const { width, height } = rackLayout.dimensions;
+  const bayWidth = width / rack.cells_per_level;
+  const bayLeft = cell.position === 1
+    ? -width / 2 + RACK_POST_WIDTH
+    : -width / 2 + bayWidth * (cell.position - 1);
+  const bayRight = cell.position === rack.cells_per_level
+    ? width / 2 - RACK_POST_WIDTH
+    : -width / 2 + bayWidth * cell.position;
+  const levelSpacing = rack.levels_count > 1 ? (height - 0.92) / (rack.levels_count - 1) : 0;
+  const cellBottom = getRackShelfY(cell.level, levelSpacing) +
+    SHELF_BOARD_CENTER_OFFSET + SHELF_BOARD_THICKNESS / 2;
+  const cellTop = cell.level < rack.levels_count
+    ? getRackShelfY(cell.level + 1, levelSpacing) + SHELF_BOARD_CENTER_OFFSET - SHELF_BOARD_THICKNESS / 2
+    : height - 0.12;
+  const localPosition = new THREE.Vector3(
+    (bayLeft + bayRight) / 2,
+    cellBottom + Math.max(0, cellTop - cellBottom) * 0.46,
+    0,
+  );
+  localPosition.applyAxisAngle(
+    new THREE.Vector3(0, 1, 0),
+    THREE.MathUtils.degToRad(rackLayout.rotation_y_deg),
+  );
+  localPosition.add(new THREE.Vector3(
+    rackLayout.position.x,
+    rackLayout.position.y,
+    rackLayout.position.z,
+  ));
+  return localPosition;
 }

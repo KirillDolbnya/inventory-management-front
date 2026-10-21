@@ -1,4 +1,5 @@
-import type { InventoryCell, InventoryItem, InventoryPlacement } from "@/features/dashboard/types/inventory";
+import type { InventoryCell, InventoryItem } from "@/features/dashboard/types/inventory";
+import type { CellInventoryItem } from "@/features/warehouse/api/inventory-placement-api";
 
 export interface Cell extends InventoryCell {}
 
@@ -11,7 +12,6 @@ export interface Rack {
 }
 
 export interface WarehouseLayout {
-  version: number;
   room: {
     width: number;
     length: number;
@@ -20,6 +20,12 @@ export interface WarehouseLayout {
   walls: LayoutWall[];
   columns: LayoutColumn[];
   racks: LayoutRack[];
+  model?: {
+    url: string;
+    format: string;
+    unit: string;
+    origin: string;
+  };
 }
 
 export interface LayoutWall {
@@ -38,15 +44,12 @@ export interface LayoutColumn {
 
 export interface LayoutRack {
   rackId: number;
-  position: { x: number; z: number };
-  rotation: number;
+  position: { x: number; y: number; z: number };
+  rotation_y_deg: number;
   dimensions: { width: number; depth: number; height: number };
 }
 
-export type WarehouseCellItem = InventoryItem & {
-  cell_quantity: number;
-  placement: InventoryPlacement;
-};
+export type WarehouseCellItem = CellInventoryItem;
 
 export type WarehouseInventoryItem = InventoryItem & {
   warehouse_quantity: number;

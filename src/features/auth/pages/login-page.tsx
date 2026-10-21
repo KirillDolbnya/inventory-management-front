@@ -4,6 +4,7 @@ import { Boxes, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/api/client";
@@ -24,7 +25,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: "", password: "", remember: false },
   });
 
   const submit: SubmitHandler<LoginFormValues> = async (values) => {
@@ -141,6 +142,11 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
                   </p>
                 )}
               </div>
+
+              <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-muted-foreground">
+                <Checkbox id="remember" {...register("remember")} />
+                <span>Запомнить меня</span>
+              </label>
 
               {errors.root && (
                 <p className="text-sm text-destructive" role="alert">
