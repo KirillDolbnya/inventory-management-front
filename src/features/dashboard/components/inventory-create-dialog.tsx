@@ -14,6 +14,7 @@ import {
 
 type InventoryCreateDialogProps = {
   open: boolean;
+  closeRequestRef?: { current: (() => boolean) | null };
   onClose: () => void;
   onCreated: () => Promise<void>;
 };
@@ -31,7 +32,7 @@ function getSubmitErrorMessage(error: unknown) {
   return "Не удалось добавить инвентарь. Проверьте данные и попробуйте снова.";
 }
 
-export function InventoryCreateDialog({ open, onClose, onCreated }: InventoryCreateDialogProps) {
+export function InventoryCreateDialog({ open, closeRequestRef, onClose, onCreated }: InventoryCreateDialogProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const {
     register,
@@ -39,7 +40,7 @@ export function InventoryCreateDialog({ open, onClose, onCreated }: InventoryCre
     clearErrors,
     reset,
     setError,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<InventoryCreateFormValues>({
     resolver: zodResolver(inventoryCreateSchema),
     defaultValues: { name: "", description: "", quantity: 1 },
@@ -48,9 +49,31 @@ export function InventoryCreateDialog({ open, onClose, onCreated }: InventoryCre
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) dialog.show();
     if (!open && dialog.open) dialog.close();
   }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      reset({ name: "", description: "", quantity: 1 });
+      clearErrors();
+    }
+  }, [clearErrors, open, reset]);
+
+  const requestClose = () => {
+    if (isSubmitting) return false;
+    if (isDirty && !window.confirm("Закрыть панель? Введённые данные будут потеряны.")) return false;
+    onClose();
+    return true;
+  };
+
+  useEffect(() => {
+    if (!closeRequestRef) return;
+    closeRequestRef.current = requestClose;
+    return () => {
+      if (closeRequestRef.current === requestClose) closeRequestRef.current = null;
+    };
+  });
 
   const submit: SubmitHandler<InventoryCreateFormValues> = async (values) => {
     clearErrors(["name", "description", "quantity"]);
@@ -90,13 +113,13 @@ export function InventoryCreateDialog({ open, onClose, onCreated }: InventoryCre
   return (
     <dialog
       aria-labelledby="inventory-create-title"
-      className="inventory-create-dialog"
+      className="inventory-create-dialog workspace-editor-dialog"
       onCancel={(event) => {
-        if (isSubmitting) event.preventDefault();
-        else onClose();
+        event.preventDefault();
+        requestClose();
       }}
       onClick={(event) => {
-        if (event.target === dialogRef.current && !isSubmitting) onClose();
+        if (event.target === dialogRef.current) requestClose();
       }}
       onClose={onClose}
       ref={dialogRef}
@@ -113,7 +136,7 @@ export function InventoryCreateDialog({ open, onClose, onCreated }: InventoryCre
             aria-label="Закрыть"
             className="size-10 rounded-lg"
             disabled={isSubmitting}
-            onClick={onClose}
+            onClick={requestClose}
             size="icon"
             type="button"
             variant="ghost"
@@ -158,6 +181,7 @@ export function InventoryCreateDialog({ open, onClose, onCreated }: InventoryCre
               className="h-12 rounded-lg bg-white text-base sm:text-sm"
               id="inventory-quantity"
               inputMode="numeric"
+              max={5000}
               min={1}
               step={1}
               type="number"
@@ -170,7 +194,7 @@ export function InventoryCreateDialog({ open, onClose, onCreated }: InventoryCre
         </div>
 
         <footer className="inventory-create-dialog__footer">
-          <Button className="h-12 flex-1 rounded-lg sm:flex-none" disabled={isSubmitting} onClick={onClose} type="button" variant="outline">
+          <Button className="h-12 flex-1 rounded-lg sm:flex-none" disabled={isSubmitting} onClick={requestClose} type="button" variant="outline">
             Отмена
           </Button>
           <Button className="h-12 flex-1 rounded-lg sm:flex-none" disabled={isSubmitting} type="submit">

@@ -1,4 +1,5 @@
 import type { Rack, WarehouseLayout } from "@/features/warehouse/types";
+import { getWallOutlineErrors, isPolygonWithinOutline } from "@/features/warehouse/utils/wall-outline";
 
 type Point = { x: number; z: number };
 type Rectangle = {
@@ -9,19 +10,41 @@ type Rectangle = {
   rotation_y_deg: number;
 };
 
-function rectangleCorners(rectangle: Rectangle): Point[] {
+const MINIMUM_OBJECT_CLEARANCE = 0.2;
+const MINIMUM_AISLE_WIDTH = 1;
+
+function rectangleCorners(rectangle: Rectangle, padding = 0): Point[] {
   const angle = rectangle.rotation_y_deg * Math.PI / 180;
   const cosine = Math.cos(angle);
   const sine = Math.sin(angle);
+  const halfWidth = rectangle.width / 2 + padding;
+  const halfDepth = rectangle.depth / 2 + padding;
   return [
-    [-rectangle.width / 2, -rectangle.depth / 2],
-    [rectangle.width / 2, -rectangle.depth / 2],
-    [rectangle.width / 2, rectangle.depth / 2],
-    [-rectangle.width / 2, rectangle.depth / 2],
+    [-halfWidth, -halfDepth],
+    [halfWidth, -halfDepth],
+    [halfWidth, halfDepth],
+    [-halfWidth, halfDepth],
   ].map(([localX, localZ]) => ({
     x: rectangle.x + localX * cosine + localZ * sine,
     z: rectangle.z - localX * sine + localZ * cosine,
   }));
+}
+
+function areRackSectionsInSameRow(first: Rectangle, second: Rectangle) {
+  const firstAngle = first.rotation_y_deg * Math.PI / 180;
+  const secondAngle = second.rotation_y_deg * Math.PI / 180;
+  const angleDifference = Math.abs(Math.atan2(Math.sin(firstAngle - secondAngle), Math.cos(firstAngle - secondAngle)));
+  if (Math.min(angleDifference, Math.PI - angleDifference) > Math.PI / 18) return false;
+
+  const widthAxis = { x: Math.cos(firstAngle), z: -Math.sin(firstAngle) };
+  const depthAxis = { x: Math.sin(firstAngle), z: Math.cos(firstAngle) };
+  const delta = { x: second.x - first.x, z: second.z - first.z };
+  const alongRow = Math.abs(delta.x * widthAxis.x + delta.z * widthAxis.z);
+  const acrossRow = Math.abs(delta.x * depthAxis.x + delta.z * depthAxis.z);
+  const rowGap = alongRow - (first.width + second.width) / 2;
+  const depthOverlap = (first.depth + second.depth) / 2 - acrossRow;
+
+  return rowGap >= -0.02 && depthOverlap >= Math.min(first.depth, second.depth) * 0.7;
 }
 
 function polygonsOverlap(first: Point[], second: Point[]) {
@@ -44,21 +67,11 @@ function polygonsOverlap(first: Point[], second: Point[]) {
   return true;
 }
 
-function isWithinRoom(points: Point[], width: number, length: number) {
-  const halfWidth = width / 2;
-  const halfLength = length / 2;
-  const epsilon = 0.0001;
-  return points.every((point) =>
-    point.x >= -halfWidth - epsilon &&
-    point.x <= halfWidth + epsilon &&
-    point.z >= -halfLength - epsilon &&
-    point.z <= halfLength + epsilon,
-  );
-}
-
 export function validateWarehouseLayout(layout: WarehouseLayout, racks: Rack[]): string[] {
   const errors: string[] = [];
   const { width, length, height } = layout.room;
+  const wallErrors = getWallOutlineErrors(layout.wallOutline);
+  if (wallErrors.length) return wallErrors;
   if (![width, length, height].every((value) => Number.isFinite(value) && value > 0)) {
     errors.push("Укажите положительные размеры помещения.");
     return errors;
@@ -69,7 +82,8 @@ export function validateWarehouseLayout(layout: WarehouseLayout, racks: Rack[]):
     errors.push("Планировка должна содержать все стеллажи склада.");
   }
 
-  const objects: Array<{ label: string; polygon: Point[] }> = [];
+  const wallClearance = Math.max(0, ...layout.walls.map((wall) => wall.thickness / 2 + 0.02));
+  const objects: Array<{ label: string; kind: "rack" | "column"; rectangle: Rectangle; polygon: Point[] }> = [];
   layout.racks.forEach((rackLayout) => {
     const rack = rackById.get(rackLayout.rackId);
     if (!rack) return;
@@ -91,36 +105,56 @@ export function validateWarehouseLayout(layout: WarehouseLayout, racks: Rack[]):
       depth: dimensions.depth,
       rotation_y_deg: rackLayout.rotation_y_deg,
     });
-    if (!isWithinRoom(polygon, width, length)) {
-      errors.push(`Стеллаж ${rack.code} выходит за границы помещения.`);
+    if (!isPolygonWithinOutline(polygon, layout.wallOutline, wallClearance)) {
+      errors.push(`Стеллаж ${rack.code} выходит за контур помещения или задевает стену.`);
     }
-    objects.push({ label: `Стеллаж ${rack.code}`, polygon });
+    objects.push({
+      label: `Стеллаж ${rack.code}`,
+      kind: "rack",
+      rectangle: { x, z, width: dimensions.width, depth: dimensions.depth, rotation_y_deg: rackLayout.rotation_y_deg },
+      polygon,
+    });
   });
 
   layout.columns.forEach((column) => {
     const { width: columnWidth, depth, height: columnHeight } = column.dimensions;
     if (![column.position.x, column.position.z, columnWidth, depth, columnHeight].every(Number.isFinite) ||
       columnWidth <= 0 || depth <= 0 || columnHeight <= 0 || columnHeight > height) {
-      errors.push("Проверьте положение и размеры колонн.");
+      errors.push(`Проверьте положение и размеры колонны ${column.id}.`);
       return;
     }
-    const polygon = rectangleCorners({
+    const rectangle = {
       x: column.position.x,
       z: column.position.z,
-      width: columnWidth,
-      depth,
+      width: columnWidth + 0.08,
+      depth: depth + 0.08,
       rotation_y_deg: 0,
-    });
-    if (!isWithinRoom(polygon, width, length)) {
-      errors.push("Колонна выходит за границы помещения.");
+    };
+    const polygon = rectangleCorners(rectangle);
+    if (!isPolygonWithinOutline(polygon, layout.wallOutline, wallClearance)) {
+      errors.push(`Колонна ${column.id} выходит за контур помещения или задевает стену.`);
     }
-    objects.push({ label: "Колонна", polygon });
+    objects.push({ label: `Колонна ${column.id}`, kind: "column", rectangle, polygon });
   });
 
   for (let first = 0; first < objects.length; first += 1) {
     for (let second = first + 1; second < objects.length; second += 1) {
-      if (polygonsOverlap(objects[first].polygon, objects[second].polygon)) {
-        errors.push(`${objects[first].label} пересекается с ${objects[second].label.toLowerCase()}.`);
+      const objectA = objects[first];
+      const objectB = objects[second];
+      const sameRow = objectA.kind === "rack" && objectB.kind === "rack" &&
+        areRackSectionsInSameRow(objectA.rectangle, objectB.rectangle);
+      const requiredClearance = objectA.kind === "column" && objectB.kind === "column"
+        ? MINIMUM_OBJECT_CLEARANCE
+        : sameRow ? MINIMUM_OBJECT_CLEARANCE : MINIMUM_AISLE_WIDTH;
+      const firstWithClearance = rectangleCorners(objectA.rectangle, requiredClearance / 2);
+      const secondWithClearance = rectangleCorners(objectB.rectangle, requiredClearance / 2);
+      const otherLabel = objectB.kind === "rack"
+        ? `стеллаж ${objectB.label.slice("Стеллаж ".length)}`
+        : objectB.label.toLocaleLowerCase("ru-RU");
+      if (polygonsOverlap(firstWithClearance, secondWithClearance)) {
+        errors.push(sameRow
+          ? `${objectA.label} расположен слишком близко к ${otherLabel}; между секциями одного ряда оставьте не менее 20 см.`
+          : `${objectA.label} расположен слишком близко к ${otherLabel}; оставьте проход не менее ${MINIMUM_AISLE_WIDTH} м.`);
       }
     }
   }

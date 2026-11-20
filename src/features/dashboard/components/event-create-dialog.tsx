@@ -13,6 +13,7 @@ import type { CreateEventInput } from "@/features/dashboard/types/inventory-even
 
 type EventCreateDialogProps = {
   open: boolean;
+  closeRequestRef?: { current: (() => boolean) | null };
   onClose: () => void;
   onCreated: (eventId: number) => void;
 };
@@ -107,7 +108,7 @@ function getCreateErrorMessage(error: unknown) {
   return "Не удалось создать событие. Проверьте данные и попробуйте снова.";
 }
 
-export function EventCreateDialog({ open, onClose, onCreated }: EventCreateDialogProps) {
+export function EventCreateDialog({ open, closeRequestRef, onClose, onCreated }: EventCreateDialogProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const inventoryRequestId = useRef(0);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -125,7 +126,7 @@ export function EventCreateDialog({ open, onClose, onCreated }: EventCreateDialo
     reset,
     setError,
     clearErrors,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({
     resolver: zodResolver(eventSchema),
     defaultValues: createDefaultValues(),
@@ -134,9 +135,21 @@ export function EventCreateDialog({ open, onClose, onCreated }: EventCreateDialo
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) dialog.show();
     if (!open && dialog.open) dialog.close();
   }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      reset(createDefaultValues());
+      clearErrors();
+      setStep(1);
+      setSelectedPlacements([]);
+      setInventoryQuery("");
+      setReservationError(null);
+      setSubmitError(null);
+    }
+  }, [clearErrors, open, reset]);
 
   useEffect(() => {
     if (!open) return;
@@ -262,8 +275,19 @@ export function EventCreateDialog({ open, onClose, onCreated }: EventCreateDialo
   });
 
   const close = () => {
-    if (!isSubmitting) onClose();
+    if (isSubmitting) return false;
+    if ((isDirty || selectedPlacements.length > 0) && !window.confirm("Закрыть панель? Несохранённые данные события и бронирования будут потеряны.")) return false;
+    onClose();
+    return true;
   };
+
+  useEffect(() => {
+    if (!closeRequestRef) return;
+    closeRequestRef.current = close;
+    return () => {
+      if (closeRequestRef.current === close) closeRequestRef.current = null;
+    };
+  });
 
   const back = () => {
     setSubmitError(null);
@@ -275,15 +299,15 @@ export function EventCreateDialog({ open, onClose, onCreated }: EventCreateDialo
     <dialog
       aria-describedby="event-create-description"
       aria-labelledby="event-create-title"
-      className="event-create-dialog"
+      className="event-create-dialog workspace-editor-dialog"
       onCancel={(event) => {
-        if (isSubmitting) event.preventDefault();
-        else onClose();
+        event.preventDefault();
+        close();
       }}
       onClick={(event) => {
         if (event.target === dialogRef.current) close();
       }}
-      onClose={onClose}
+      onClose={() => undefined}
       ref={dialogRef}
     >
       <form className="event-create-dialog__form" noValidate onSubmit={submitStep}>

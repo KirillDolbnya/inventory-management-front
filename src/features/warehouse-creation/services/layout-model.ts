@@ -1,54 +1,155 @@
 import * as THREE from "three";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import type { Rack, WarehouseLayout } from "@/features/warehouse/types";
+import type { LayoutColumn, LayoutRack, Rack, WarehouseLayout } from "@/features/warehouse/types";
+import { createRectangularOutline, createWallsFromOutline, getOutlineBounds } from "@/features/warehouse/utils/wall-outline";
+import { validateWarehouseLayout } from "@/features/warehouse-creation/services/layout-validation";
 
 export const DEFAULT_ROOM = { width: 14.4, length: 8.2, height: 5.2 };
+const DEFAULT_RACK_WIDTH = 3.6;
+const DEFAULT_RACK_DEPTH = 1.2;
+const DEFAULT_RACK_LEVEL_SPACING = 1.05;
+const MINIMUM_DEFAULT_RACK_HEIGHT = 2.8;
+const AUTO_PLACEMENT_STEP = 0.25;
 
-function createWalls(width: number, length: number, height: number): WarehouseLayout["walls"] {
-  const halfWidth = width / 2;
-  const halfLength = length / 2;
-  return [
-    { id: "north", start: { x: -halfWidth, z: -halfLength }, end: { x: halfWidth, z: -halfLength }, height, thickness: 0.16 },
-    { id: "east", start: { x: halfWidth, z: -halfLength }, end: { x: halfWidth, z: halfLength }, height, thickness: 0.16 },
-    { id: "south", start: { x: halfWidth, z: halfLength }, end: { x: -halfWidth, z: halfLength }, height, thickness: 0.16 },
-    { id: "west", start: { x: -halfWidth, z: halfLength }, end: { x: -halfWidth, z: -halfLength }, height, thickness: 0.16 },
-  ];
+function makePlacementCoordinates(min: number, max: number) {
+  const values: number[] = [];
+  for (let value = min; value <= max + 0.0001; value += AUTO_PLACEMENT_STEP) {
+    values.push(Number(value.toFixed(2)));
+  }
+  if (!values.length || max - values[values.length - 1] > 0.0001) {
+    values.push(Number(max.toFixed(2)));
+  }
+  return values;
+}
+
+export function makeDefaultRackLayout(rack: Rack, room: WarehouseLayout["room"] = DEFAULT_ROOM): LayoutRack {
+  const targetHeight = Math.max(
+    MINIMUM_DEFAULT_RACK_HEIGHT,
+    0.92 + Math.max(0, rack.levels_count - 1) * DEFAULT_RACK_LEVEL_SPACING,
+  );
+
+  return {
+    rackId: rack.id,
+    position: { x: 0, y: 0, z: 0 },
+    rotation_y_deg: 0,
+    dimensions: {
+      width: DEFAULT_RACK_WIDTH,
+      depth: DEFAULT_RACK_DEPTH,
+      height: Math.min(room.height, targetHeight),
+    },
+  };
+}
+
+export function findAvailableRackPlacement(
+  layout: WarehouseLayout,
+  rack: Rack,
+  racks: Rack[],
+  dimensions = makeDefaultRackLayout(rack, layout.room).dimensions,
+): LayoutRack | null {
+  const outlineBounds = getOutlineBounds(layout.wallOutline);
+  const wallClearance = Math.max(0.1, ...layout.walls.map((wall) => wall.thickness / 2 + 0.02));
+  const candidates = [0, 90];
+  const knownRacks = new Map(racks.map((item) => [item.id, item]));
+  const placedRacks = layout.racks
+    .map((item) => knownRacks.get(item.rackId))
+    .filter((item): item is Rack => Boolean(item));
+
+  for (const rotation of candidates) {
+    const radians = THREE.MathUtils.degToRad(rotation);
+    const halfX = Math.abs(Math.cos(radians)) * dimensions.width / 2 +
+      Math.abs(Math.sin(radians)) * dimensions.depth / 2;
+    const halfZ = Math.abs(Math.sin(radians)) * dimensions.width / 2 +
+      Math.abs(Math.cos(radians)) * dimensions.depth / 2;
+    const minX = outlineBounds.minX + wallClearance + halfX;
+    const maxX = outlineBounds.maxX - wallClearance - halfX;
+    const minZ = outlineBounds.minZ + wallClearance + halfZ;
+    const maxZ = outlineBounds.maxZ - wallClearance - halfZ;
+    if (minX > maxX || minZ > maxZ || dimensions.height > layout.room.height) continue;
+
+    const candidateXs = makePlacementCoordinates(minX, maxX);
+    const candidateZs = makePlacementCoordinates(minZ, maxZ);
+
+    for (const z of candidateZs) {
+      for (const x of candidateXs) {
+        const candidate: LayoutRack = {
+          rackId: rack.id,
+          position: {
+            x,
+            y: 0,
+            z,
+          },
+          rotation_y_deg: rotation,
+          dimensions,
+        };
+        const testLayout = { ...layout, racks: [...layout.racks, candidate] };
+        if (validateWarehouseLayout(testLayout, [...placedRacks, rack]).length === 0) return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function findAvailableColumnPosition(
+  layout: WarehouseLayout,
+  racks: Rack[],
+  width = 0.4,
+  depth = 0.4,
+): LayoutColumn["position"] | null {
+  const wallClearance = Math.max(0.1, ...layout.walls.map((wall) => wall.thickness / 2 + 0.02));
+  const outlineBounds = getOutlineBounds(layout.wallOutline);
+  const minX = outlineBounds.minX + wallClearance + (width + 0.08) / 2;
+  const maxX = outlineBounds.maxX - wallClearance - (width + 0.08) / 2;
+  const minZ = outlineBounds.minZ + wallClearance + (depth + 0.08) / 2;
+  const maxZ = outlineBounds.maxZ - wallClearance - (depth + 0.08) / 2;
+  if (minX > maxX || minZ > maxZ) return null;
+
+  const candidateXs = makePlacementCoordinates(minX, maxX);
+  const candidateZs = makePlacementCoordinates(minZ, maxZ);
+  const knownRacks = new Map(racks.map((rack) => [rack.id, rack]));
+  const placedRacks = layout.racks
+    .map((item) => knownRacks.get(item.rackId))
+    .filter((item): item is Rack => Boolean(item));
+  const candidateId = "placement-candidate-column";
+
+  for (const z of candidateZs) {
+    for (const x of candidateXs) {
+      const position = {
+        x,
+        z,
+      };
+      const candidate: LayoutColumn = {
+        id: candidateId,
+        position,
+        dimensions: { width, depth, height: layout.room.height },
+      };
+      if (validateWarehouseLayout({ ...layout, columns: [...layout.columns, candidate] }, placedRacks).length === 0) {
+        return position;
+      }
+    }
+  }
+
+  return null;
 }
 
 export function makeDefaultLayout(
   racks: Rack[],
   room = DEFAULT_ROOM,
 ): WarehouseLayout {
-  const count = Math.max(racks.length, 1);
-  const columnsCount = Math.max(1, Math.ceil(Math.sqrt(count * room.width / room.length)));
-  const rowsCount = Math.ceil(count / columnsCount);
-  const slotWidth = room.width / columnsCount;
-  const slotLength = room.length / rowsCount;
-
-  return {
+  const layout: WarehouseLayout = {
     room: { ...room },
-    walls: createWalls(room.width, room.length, room.height),
+    wallOutline: createRectangularOutline(room.width, room.length),
+    hiddenWallIndex: null,
+    walls: createWallsFromOutline(createRectangularOutline(room.width, room.length), room.height),
     columns: [],
-    racks: racks.map((rack, index) => {
-      const column = index % columnsCount;
-      const row = Math.floor(index / columnsCount);
-      return {
-        rackId: rack.id,
-        position: {
-          x: -room.width / 2 + slotWidth * (column + 0.5),
-          y: 0,
-          z: -room.length / 2 + slotLength * (row + 0.5),
-        },
-        rotation_y_deg: 0,
-        dimensions: {
-          width: Math.min(3.2, slotWidth * 0.78),
-          depth: Math.min(0.95, slotLength * 0.5),
-          height: Math.min(room.height * 0.78, Math.max(2.2, rack.levels_count * 0.65)),
-        },
-      };
-    }),
+    racks: [],
   };
+
+  racks.forEach((rack) => {
+    const rackLayout = findAvailableRackPlacement(layout, rack, racks);
+    if (rackLayout) layout.racks.push(rackLayout);
+  });
+  return layout;
 }
 
 function addBox(
@@ -72,6 +173,8 @@ function buildWarehouseScene(layout: WarehouseLayout) {
   model.name = "warehouse-layout";
   const warehouseLayoutMetadata = {
     room: layout.room,
+    wallOutline: layout.wallOutline,
+    hiddenWallIndex: layout.hiddenWallIndex,
     columns: layout.columns,
     coordinateSystem: { origin: "floor-center", up: "Y", unit: "m" },
   };
@@ -79,7 +182,7 @@ function buildWarehouseScene(layout: WarehouseLayout) {
   scene.userData.warehouseLayout = warehouseLayoutMetadata;
   scene.add(model);
 
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: "#e5e9ee", roughness: 0.88 });
+  const floorMaterial = new THREE.MeshStandardMaterial({ color: "#e5e9ee", roughness: 0.88, side: THREE.DoubleSide });
   const wallMaterial = new THREE.MeshStandardMaterial({
     color: "#dce3eb",
     transparent: true,
@@ -91,13 +194,18 @@ function buildWarehouseScene(layout: WarehouseLayout) {
   const trimMaterial = new THREE.MeshStandardMaterial({ color: "#c5d0dc", roughness: 0.75 });
   const columnMaterial = new THREE.MeshStandardMaterial({ color: "#aeb9c6", roughness: 0.78 });
 
-  addBox(
-    model,
-    "warehouse-floor",
-    [layout.room.width, 0.11, layout.room.length],
-    [0, -0.055, 0],
-    floorMaterial,
-  );
+  const floorShape = new THREE.Shape();
+  layout.wallOutline.forEach((point, index) => {
+    if (index === 0) floorShape.moveTo(point.x, -point.z);
+    else floorShape.lineTo(point.x, -point.z);
+  });
+  floorShape.closePath();
+  const floorGeometry = new THREE.ExtrudeGeometry(floorShape, { depth: 0.11, bevelEnabled: false });
+  floorGeometry.rotateX(-Math.PI / 2);
+  const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+  floor.name = "warehouse-floor";
+  floor.position.y = -0.11;
+  model.add(floor);
 
   layout.walls.forEach((wall) => {
     const dx = wall.end.x - wall.start.x;
@@ -154,30 +262,4 @@ export async function createWarehouseModelFile(layout: WarehouseLayout): Promise
     );
   });
   return new File([binary], "warehouse-layout.glb", { type: "model/gltf-binary" });
-}
-
-export async function readWarehouseModelLayout(url: string): Promise<Pick<WarehouseLayout, "room" | "columns">> {
-  const gltf = await new GLTFLoader().loadAsync(url);
-  let metadata = gltf.scene.userData.warehouseLayout as
-    | { room?: WarehouseLayout["room"]; columns?: WarehouseLayout["columns"] }
-    | undefined;
-  if (!metadata) {
-    gltf.scene.traverse((object) => {
-      metadata ??= object.userData.warehouseLayout as typeof metadata;
-    });
-  }
-  if (metadata?.room && Array.isArray(metadata.columns)) {
-    return { room: metadata.room, columns: metadata.columns };
-  }
-
-  const bounds = new THREE.Box3().setFromObject(gltf.scene);
-  const size = bounds.getSize(new THREE.Vector3());
-  return {
-    room: {
-      width: size.x || DEFAULT_ROOM.width,
-      length: size.z || DEFAULT_ROOM.length,
-      height: size.y || DEFAULT_ROOM.height,
-    },
-    columns: [],
-  };
 }

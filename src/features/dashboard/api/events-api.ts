@@ -5,6 +5,9 @@ import type {
   EventReservation,
   InventoryEvent,
   InventoryEventDetail,
+  ReservationInput,
+  ReservationMutationResult,
+  UpdateEventInput,
 } from "@/features/dashboard/types/inventory-event";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -120,6 +123,26 @@ function parseCreatedEvent(value: unknown): CreatedEvent {
   return { ...parseEvent(value), reservations };
 }
 
+function parseReservationMutation(value: unknown): ReservationMutationResult {
+  if (
+    !isRecord(value) ||
+    !isPositiveInteger(value.id) ||
+    !isPositiveInteger(value.event_id) ||
+    !isPositiveInteger(value.inventory_id) ||
+    !isPositiveInteger(value.cell_id) ||
+    !isPositiveInteger(value.quantity)
+  ) {
+    throw new ApiError("Unexpected reservation response", 0, undefined, "response");
+  }
+  return {
+    id: value.id,
+    event_id: value.event_id,
+    inventory_id: value.inventory_id,
+    cell_id: value.cell_id,
+    quantity: value.quantity,
+  };
+}
+
 export const eventsApi = {
   async getAll(): Promise<InventoryEvent[]> {
     const response = await requestApi<unknown>("events", { cache: "no-store" });
@@ -138,5 +161,38 @@ export const eventsApi = {
       method: "POST",
       body: JSON.stringify(input),
     }));
+  },
+
+  async update(eventId: number, input: UpdateEventInput): Promise<InventoryEvent> {
+    return parseEvent(await requestApi<unknown>(`events/${eventId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }));
+  },
+
+  async delete(eventId: number): Promise<void> {
+    await requestApi<undefined>(`events/${eventId}`, { method: "DELETE" });
+  },
+
+  async addReservations(eventId: number, reservations: ReservationInput[]): Promise<ReservationMutationResult[]> {
+    const response = await requestApi<unknown>(`events/${eventId}/reservations`, {
+      method: "POST",
+      body: JSON.stringify({ reservations }),
+    });
+    if (!isRecord(response) || !Array.isArray(response.data)) {
+      throw new ApiError("Unexpected reservation list in API response", 0, undefined, "response");
+    }
+    return response.data.map(parseReservationMutation);
+  },
+
+  async updateReservation(eventId: number, reservationId: number, quantity: number): Promise<ReservationMutationResult> {
+    return parseReservationMutation(await requestApi<unknown>(`events/${eventId}/reservations/${reservationId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ quantity }),
+    }));
+  },
+
+  async deleteReservation(eventId: number, reservationId: number): Promise<void> {
+    await requestApi<undefined>(`events/${eventId}/reservations/${reservationId}`, { method: "DELETE" });
   },
 };

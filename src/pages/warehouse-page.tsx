@@ -1,9 +1,14 @@
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
+import { useGLTF } from "@react-three/drei";
 import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { WarehouseInfoCard } from "@/features/warehouse/components/warehouse-info-card";
+import { WarehouseManagementDialog, type WarehouseManagementMode } from "@/features/warehouse/components/warehouse-management-dialog";
+import { WarehouseCreationWizard } from "@/features/warehouse-creation/components/warehouse-creation-wizard";
+import { WarehouseRackManagementDialog } from "@/features/warehouse/components/warehouse-rack-management-dialog";
+import { WarehouseModelReadError } from "@/features/warehouse-creation/services/warehouse-model-read-error";
 import { WarehouseNavigation } from "@/features/warehouse/components/warehouse-navigation";
 import { WarehousePanel } from "@/features/warehouse/components/warehouse-panel";
 import { WarehouseScene, type WarehouseCameraApi } from "@/features/warehouse/components/warehouse-scene";
@@ -22,9 +27,22 @@ type PageData = {
   layout: WarehouseLayout | null;
   items: InventoryItem[];
   events: InventoryEvent[];
+  eventsError: string | null;
 };
 
 type CellView = "details" | "place" | "transfer" | "unplace";
+
+type WarehouseLoadSource = "warehouse" | "racks" | "layout" | "inventory";
+
+class WarehousePageLoadError extends Error {
+  constructor(readonly source: WarehouseLoadSource, readonly cause: unknown) {
+    super("Warehouse page data could not be loaded");
+  }
+}
+
+function trackWarehouseRequest<T>(source: WarehouseLoadSource, request: Promise<T>): Promise<T> {
+  return request.catch((error: unknown) => { throw new WarehousePageLoadError(source, error); });
+}
 
 function getCellLoadError(error: unknown) {
   if (error instanceof ApiError) {
@@ -37,6 +55,39 @@ function getCellLoadError(error: unknown) {
   return "Не удалось обновить данные ячейки. Попробуйте ещё раз.";
 }
 
+function getWarehouseLoadError(error: unknown) {
+  const source = error instanceof WarehousePageLoadError ? error.source : null;
+  const cause = error instanceof WarehousePageLoadError ? error.cause : error;
+  if (source === "layout" && cause instanceof WarehouseModelReadError) {
+    if (cause.kind === "network") return "Браузер не может получить файл 3D-модели. Проверьте адрес файла и доступ к нему из frontend.";
+    if (cause.kind === "timeout") return "Загрузка файла 3D-модели заняла слишком долго. Проверьте сервер и повторите попытку.";
+    if (cause.kind === "http") return cause.status === 404
+      ? "Файл 3D-модели не найден на сервере. Планировка склада сохранена, но модель нужно восстановить."
+      : "Сервер не смог отдать файл 3D-модели. Повторите попытку позже.";
+    return "Файл планировки получен, но его нельзя прочитать как GLB-модель.";
+  }
+  if (source === "layout" && !(cause instanceof ApiError)) {
+    return "Не удалось прочитать сохранённую 3D-модель склада. Проверьте доступность файла и повторите попытку.";
+  }
+  if (source === "racks" && !(cause instanceof ApiError)) {
+    return "Не удалось загрузить стеллажи и ячейки этого склада.";
+  }
+  if (source === "inventory" && !(cause instanceof ApiError)) {
+    return "Не удалось загрузить данные, необходимые для показателей склада.";
+  }
+  if (cause instanceof ApiError) {
+    if (cause.status === 401) return "Сеанс завершён. Войдите в систему снова.";
+    if (cause.status === 403) return "У вас нет доступа к этому складу.";
+    if (cause.status === 404) return "Склад не найден или его данные уже удалены.";
+    if (cause.status === 419) return "Сеанс истёк. Обновите страницу и попробуйте снова.";
+    if (cause.kind === "network" || cause.status === 0) return "Не удалось подключиться к серверу. Проверьте соединение и попробуйте снова.";
+    if (cause.kind === "response") return "Сервер вернул данные склада в неподдерживаемом формате.";
+  }
+  if (source === "layout") return "Не удалось получить сохранённую планировку склада.";
+  if (source === "warehouse") return "Не удалось получить данные выбранного склада.";
+  return "Не удалось загрузить данные склада. Попробуйте ещё раз.";
+}
+
 export function WarehousePage() {
   const { warehouseId: warehouseIdParam } = useParams();
   const warehouseId = Number(warehouseIdParam);
@@ -44,9 +95,34 @@ export function WarehousePage() {
   const navigate = useNavigate();
   const cellIdParam = new URLSearchParams(location.search).get("cellId");
   const cameraApiRef = useRef<WarehouseCameraApi | null>(null);
+  const layoutWizardCloseRequestRef = useRef<(() => boolean) | null>(null);
+  const warehouseEditorCloseRequestRef = useRef<(() => boolean) | null>(null);
+  const pendingSavedLayoutRef = useRef<WarehouseLayout | null>(null);
+  const pendingWarehouseManagementRef = useRef<{ mode: WarehouseManagementMode; warehouse: Warehouse } | null>(null);
   const [pageData, setPageData] = useState<PageData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [warehouseManagement, setWarehouseManagement] = useState<{ mode: WarehouseManagementMode; warehouse: Warehouse } | null>(null);
+  const [rackManagementOpen, setRackManagementOpen] = useState(false);
+  const [layoutWizardOpen, setLayoutWizardOpen] = useState(false);
+
+  useEffect(() => {
+    if (warehouseManagement || !pendingWarehouseManagementRef.current) return;
+    const nextPanel = pendingWarehouseManagementRef.current;
+    pendingWarehouseManagementRef.current = null;
+    setWarehouseManagement(nextPanel);
+  }, [warehouseManagement]);
+
+  const openWarehouseManagement = (mode: WarehouseManagementMode, warehouse: Warehouse) => {
+    const nextPanel = { mode, warehouse };
+    if (!warehouseManagement) {
+      setWarehouseManagement(nextPanel);
+      return;
+    }
+    if (warehouseManagement.mode === mode) return;
+    const closeCurrentPanel = warehouseEditorCloseRequestRef.current;
+    if (closeCurrentPanel?.()) pendingWarehouseManagementRef.current = nextPanel;
+  };
   const [activePanel, setActivePanel] = useState<WarehousePanelType | null>(null);
   const [sheetState, setSheetState] = useState<SheetState>("closed");
   const [selectedCell, setSelectedCell] = useState<{ rack: Rack; cell: Cell } | null>(null);
@@ -70,21 +146,37 @@ export function WarehousePage() {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    setLoadError(false);
+    setLoadError(null);
     setPageData(null);
+    const eventsRequest = warehouseDataService.getEventsForWarehouse(warehouseId).then(
+      (events) => ({ events, eventsError: null }),
+      (error: unknown) => ({
+        events: [],
+        eventsError: error instanceof ApiError && error.status === 404
+          ? "Список событий недоступен: в текущем API не найден маршрут этого раздела."
+          : "Не удалось загрузить события. Попробуйте позже.",
+      }),
+    );
     Promise.all([
-      warehouseDataService.getWarehouse(warehouseId),
-      warehouseDataService.getRacks(warehouseId),
-      warehouseDataService.getLayout(warehouseId),
-      warehouseDataService.getInventoryItems(),
-      warehouseDataService.getEventsForWarehouse(warehouseId),
-    ]).then(([warehouse, racks, layout, items, events]) => {
+      trackWarehouseRequest("warehouse", warehouseDataService.getWarehouse(warehouseId)),
+      trackWarehouseRequest("racks", warehouseDataService.getRacks(warehouseId)),
+      trackWarehouseRequest("layout", warehouseDataService.getLayout(warehouseId)),
+      trackWarehouseRequest("inventory", warehouseDataService.getInventoryItems()),
+      eventsRequest,
+    ]).then(([warehouse, racks, layout, items, eventResult]) => {
       if (!mounted) return;
-      setPageData(warehouse ? { warehouse, racks, layout, items, events } : null);
+      setPageData(warehouse ? {
+        warehouse,
+        racks,
+        layout,
+        items,
+        events: eventResult.events,
+        eventsError: eventResult.eventsError,
+      } : null);
       setLoading(false);
-    }).catch(() => {
+    }).catch((error: unknown) => {
       if (!mounted) return;
-      setLoadError(true);
+      setLoadError(getWarehouseLoadError(error));
       setLoading(false);
     });
 
@@ -114,6 +206,19 @@ export function WarehousePage() {
     [pageData],
   );
 
+  const selectedRackCells = useMemo(() => selectedCell
+    ? [...selectedCell.rack.cells].sort((first, second) =>
+      first.level - second.level ||
+      first.position - second.position ||
+      first.number - second.number ||
+      first.id - second.id)
+    : [], [selectedCell]);
+
+  const selectedCellOrder = useMemo(
+    () => selectedRackCells.findIndex((cell) => cell.id === selectedCell?.cell.id),
+    [selectedCell?.cell.id, selectedRackCells],
+  );
+
   const occupiedCellCount = useMemo(() => {
     if (!pageData) return 0;
     const occupied = new Set<string>();
@@ -131,9 +236,10 @@ export function WarehousePage() {
 
   const occupiedCellIds = useMemo(() => {
     const occupied = new Set<number>();
+    const knownCellIds = new Set(pageData?.racks.flatMap((rack) => rack.cells.map((cell) => cell.id)) ?? []);
     pageData?.items.forEach((item) => {
       item.placements.forEach((placement) => {
-        if (placement.warehouse.id === warehouseId && placement.quantity > 0) {
+        if (placement.warehouse.id === warehouseId && placement.quantity > 0 && knownCellIds.has(placement.cell.id)) {
           occupied.add(placement.cell.id);
         }
       });
@@ -248,6 +354,8 @@ export function WarehousePage() {
 
   const handleNavigation = useCallback((section: "overview" | "inventory" | "events") => {
     if (section === "overview") {
+      if (layoutWizardOpen && (!layoutWizardCloseRequestRef.current || !layoutWizardCloseRequestRef.current())) return;
+      if (warehouseManagement && (!warehouseEditorCloseRequestRef.current || !warehouseEditorCloseRequestRef.current())) return;
       setIsPickingTarget(false);
       setSelectionNotice(null);
       setActivePanel(null);
@@ -258,11 +366,11 @@ export function WarehousePage() {
       setUnplaceItem(null);
       setPickedTarget(null);
       setCellView("details");
-      cameraApiRef.current?.reset();
+      setRackManagementOpen(false);
       return;
     }
     openPanel(section);
-  }, [openPanel]);
+  }, [layoutWizardOpen, openPanel, warehouseManagement]);
 
   const handleCellSelect = useCallback((rack: Rack, cell: Cell) => {
     if (isPickingTarget) {
@@ -293,6 +401,26 @@ export function WarehousePage() {
     setSheetState("peek");
     void loadCellData(cell.id, false);
   }, [isPickingTarget, loadCellData, selectedCell]);
+
+  const handleCellNavigation = useCallback((direction: -1 | 1) => {
+    if (!selectedCell || selectedCellOrder < 0) return;
+    const nextCell = selectedRackCells[selectedCellOrder + direction];
+    if (!nextCell) return;
+
+    selectedCellIdRef.current = nextCell.id;
+    setSelectedCell({ rack: selectedCell.rack, cell: nextCell });
+    setCellView("details");
+    setTransferItem(null);
+    setUnplaceItem(null);
+    setFocusCellRequest(null);
+    setPickedTarget(null);
+    setSelectionNotice(null);
+    setPlacementNotice(null);
+    setDeepLinkNotice(null);
+    setIsPickingTarget(false);
+    setActivePanel("cell");
+    void loadCellData(nextCell.id, false);
+  }, [loadCellData, selectedCell, selectedCellOrder, selectedRackCells]);
 
   const handleInventoryPlacementOpen = useCallback((rackId: number, cellId: number) => {
     if (!pageData?.layout) return;
@@ -331,20 +459,35 @@ export function WarehousePage() {
     if (!cellId) return;
 
     await warehouseDataService.createInventoryPlacement(inventoryId, { cell_id: cellId, quantity });
-    if (selectedCellIdRef.current === cellId) {
-      setPlacementNotice("Инвентарь успешно размещён.");
-      setCellView("details");
-      setFocusCellRequest(null);
-      await loadCellData(cellId, true);
-    } else {
-      try {
-        const items = await warehouseDataService.getInventoryItems();
-        setPageData((current) => current ? { ...current, items } : current);
-      } catch {
-        // The placement succeeded; keep the saved result and avoid presenting it as a failed operation.
-      }
+    const shouldUpdateSelectedCell = selectedCellIdRef.current === cellId;
+    setPlacementNotice("Инвентарь успешно размещён.");
+    setCellView("details");
+    setFocusCellRequest(null);
+    if (shouldUpdateSelectedCell) {
+      setCellItemsLoading(true);
+      setCellItemsError(null);
     }
-  }, [loadCellData, selectedCell]);
+
+    const [cellResult, inventoryResult] = await Promise.allSettled([
+      warehouseDataService.getCellInventory(cellId),
+      warehouseDataService.getInventoryItems(),
+    ]);
+
+    if (cellResult.status === "fulfilled") {
+      cellInventoryCache.current.set(cellId, cellResult.value);
+      if (selectedCellIdRef.current === cellId) setCellItems(cellResult.value);
+    } else if (selectedCellIdRef.current === cellId) {
+      setCellItemsError(getCellLoadError(cellResult.reason));
+    }
+
+    if (inventoryResult.status === "fulfilled") {
+      setPageData((current) => current ? { ...current, items: inventoryResult.value } : current);
+    } else if (selectedCellIdRef.current === cellId) {
+      setPlacementNotice("Инвентарь размещён, но общие остатки склада не обновились. Повторите загрузку данных.");
+    }
+
+    if (selectedCellIdRef.current === cellId) setCellItemsLoading(false);
+  }, [selectedCell]);
 
   const handleTransferInventory = useCallback(async (placementId: number, targetCellId: number, quantity: number) => {
     const sourceCellId = selectedCell?.cell.id;
@@ -517,9 +660,12 @@ export function WarehousePage() {
   if (loadError) {
     return (
       <main className="warehouse-not-found">
-        <h1>Не удалось загрузить склад</h1>
-        <p>Проверьте соединение с сервером и попробуйте ещё раз.</p>
-        <Button onClick={() => window.location.reload()} type="button" variant="outline">Повторить</Button>
+        <h1>{loadError.startsWith("Склад не найден") ? "Склад не найден" : "Не удалось загрузить склад"}</h1>
+        <p>{loadError}</p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button onClick={() => window.location.reload()} type="button" variant="outline">Повторить</Button>
+          <Button onClick={() => navigate("/")} type="button" variant="outline">← Все склады</Button>
+        </div>
       </main>
     );
   }
@@ -536,16 +682,34 @@ export function WarehousePage() {
 
   if (!pageData.layout) {
     return (
-      <main className="warehouse-not-found">
-        <h1>Планировка ещё не сохранена</h1>
-        <p>Склад и стеллажи сохранены. Завершите настройку планировки, чтобы открыть 3D-модель.</p>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button onClick={() => navigate("/", { state: { openWarehouseSetupId: warehouseId } })} type="button">
-            Продолжить настройку
-          </Button>
-          <Button onClick={() => navigate("/")} type="button" variant="outline">← Все склады</Button>
-        </div>
-      </main>
+      <>
+        <main className="warehouse-not-found">
+          <h1>Планировка ещё не сохранена</h1>
+          <p>Склад и стеллажи сохранены. Завершите настройку планировки, чтобы открыть 3D-модель.</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button onClick={() => setLayoutWizardOpen(true)} type="button">Продолжить настройку</Button>
+            <Button onClick={() => navigate("/")} type="button" variant="outline">← Все склады</Button>
+          </div>
+        </main>
+        <WarehouseCreationWizard
+          closeRequestRef={layoutWizardCloseRequestRef}
+          context="warehouse"
+          initialWarehouseId={warehouseId}
+          onClose={() => {
+            setLayoutWizardOpen(false);
+            const savedLayout = pendingSavedLayoutRef.current;
+            if (savedLayout) {
+              setPageData((current) => current ? { ...current, layout: savedLayout } : current);
+              pendingSavedLayoutRef.current = null;
+            }
+          }}
+          onLayoutSaved={(layout) => { pendingSavedLayoutRef.current = layout; }}
+          onOpenWarehouse={() => undefined}
+          onWarehouseCreated={() => undefined}
+          open={layoutWizardOpen}
+          returnToWarehouse
+        />
+      </>
     );
   }
 
@@ -586,6 +750,77 @@ export function WarehousePage() {
         inventoryQuantity={inventoryQuantity}
         rackCount={pageData.racks.length}
         warehouse={pageData.warehouse}
+        onEdit={() => openWarehouseManagement("edit", pageData.warehouse)}
+        onDelete={() => openWarehouseManagement("delete", pageData.warehouse)}
+        onDeleteLayout={() => openWarehouseManagement("delete-layout", pageData.warehouse)}
+        onManageRacks={() => setRackManagementOpen(true)}
+      />
+
+      {rackManagementOpen && (
+        <WarehouseRackManagementDialog
+          open
+          warehouseId={pageData.warehouse.id}
+          warehouseName={pageData.warehouse.name}
+          placedRackIds={pageData.layout?.racks.map((rack) => rack.rackId) ?? []}
+          onClose={() => setRackManagementOpen(false)}
+          onRacksChange={(racks, change) => {
+            setPageData((current) => current ? {
+              ...current,
+              racks,
+              layout: change.deleted && current.layout
+                ? { ...current.layout, racks: current.layout.racks.filter((rack) => rack.rackId !== change.rackId) }
+                : current.layout,
+            } : current);
+            cellInventoryCache.current.clear();
+            cellRequestId.current += 1;
+            selectedCellIdRef.current = null;
+            setSelectedCell(null);
+            setCellItems([]);
+            setCellItemsError(null);
+            setActivePanel((current) => current === "cell" ? null : current);
+            setPickedTarget(null);
+            setIsPickingTarget(false);
+          }}
+          onOpenLayout={() => setLayoutWizardOpen(true)}
+        />
+      )}
+
+      {warehouseManagement && (
+        <WarehouseManagementDialog
+          key={`${warehouseManagement.warehouse.id}-${warehouseManagement.mode}`}
+          context="warehouse"
+          closeRequestRef={warehouseEditorCloseRequestRef}
+          mode={warehouseManagement.mode}
+          onClose={() => setWarehouseManagement(null)}
+          onDeleted={() => {
+            if (warehouseManagement.mode === "delete-layout") {
+              setPageData((current) => current ? { ...current, layout: null } : current);
+            } else {
+              navigate("/");
+            }
+          }}
+          onSaved={(warehouse) => {
+            setPageData((current) => current ? { ...current, warehouse } : current);
+          }}
+          open
+          warehouse={warehouseManagement.warehouse}
+        />
+      )}
+
+      <WarehouseCreationWizard
+        closeRequestRef={layoutWizardCloseRequestRef}
+        context="warehouse"
+        initialLayout={pageData.layout}
+        initialWarehouseId={pageData.warehouse.id}
+        onClose={() => setLayoutWizardOpen(false)}
+        onLayoutSaved={(layout) => {
+          if (layout.model?.url) useGLTF.clear(layout.model.url);
+          setPageData((current) => current ? { ...current, layout } : current);
+        }}
+        onOpenWarehouse={() => undefined}
+        onWarehouseCreated={() => undefined}
+        open={layoutWizardOpen}
+        returnToWarehouse
       />
 
       <div aria-label="Управление камерой" className="warehouse-camera-controls" role="group">
@@ -625,6 +860,7 @@ export function WarehousePage() {
       <WarehousePanel
         activePanel={activePanel}
         events={pageData.events}
+        eventsError={pageData.eventsError}
         availableItems={pageData.items}
         currentWarehouse={pageData.warehouse}
         currentRacks={pageData.racks}
@@ -660,6 +896,14 @@ export function WarehousePage() {
         onSheetStateChange={changeSheetState}
         placementNotice={placementNotice}
         selectedCell={selectedCell}
+        cellNavigation={{
+          current: selectedCellOrder + 1,
+          total: selectedRackCells.length,
+          canPrevious: selectedCellOrder > 0,
+          canNext: selectedCellOrder >= 0 && selectedCellOrder < selectedRackCells.length - 1,
+          onPrevious: () => handleCellNavigation(-1),
+          onNext: () => handleCellNavigation(1),
+        }}
         cellItems={cellItems}
         sheetState={sheetState}
       />

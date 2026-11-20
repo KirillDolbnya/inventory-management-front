@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowUpRight, MapPin } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, MapPin, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { InventoryItem, InventoryPlacement } from "@/features/dashboard/types/inventory";
 
@@ -6,16 +6,28 @@ type InventoryDetailProps = {
   item: InventoryItem;
   onBack: () => void;
   onOpenPlacement: (warehouseId: number, cellId: number) => void;
+  onEdit: () => void;
+  onDelete: () => void;
 };
 
-export function InventoryDetail({ item, onBack, onOpenPlacement }: InventoryDetailProps) {
+export function InventoryDetail({ item, onBack, onOpenPlacement, onEdit, onDelete }: InventoryDetailProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-5 pb-5 pt-3 sm:px-6">
-        <Button className="-ml-2 h-10 rounded-lg px-2 text-muted-foreground" onClick={onBack} type="button" variant="ghost">
-          <ArrowLeft aria-hidden="true" size={16} />
-          Назад к списку
-        </Button>
+        <div className="flex items-center justify-between gap-2">
+          <Button className="-ml-2 h-10 min-w-0 rounded-lg px-2 text-muted-foreground" onClick={onBack} type="button" variant="ghost">
+            <ArrowLeft aria-hidden="true" size={16} />
+            Назад к списку
+          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button aria-label={`Редактировать ${item.name}`} className="size-10 rounded-lg" onClick={onEdit} size="icon" title="Редактировать" type="button" variant="ghost">
+              <Pencil aria-hidden="true" size={16} />
+            </Button>
+            <Button aria-label={`Удалить ${item.name}`} className="size-10 rounded-lg text-destructive hover:text-destructive" onClick={onDelete} size="icon" title="Удалить" type="button" variant="ghost">
+              <Trash2 aria-hidden="true" size={16} />
+            </Button>
+          </div>
+        </div>
 
         <div className="mt-3">
           <h3 className="break-words text-lg font-semibold leading-6 tracking-tight">{item.name}</h3>

@@ -28,7 +28,6 @@
   border-radius: 18px;
   background: #fafafa;
   color: #18181b;
-  box-shadow: 0 24px 80px rgb(24 24 27 / 20%);
 }
 
 .event-create-dialog::backdrop {
@@ -290,6 +289,50 @@
   font-size: 11px;
   line-height: 16px;
   box-shadow: 0 4px 16px rgb(24 24 27 / 8%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-warehouse-state,
+.dashboard-warehouse-notice {
+  position: absolute;
+  z-index: 1110;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgb(228 228 231 / 90%);
+  border-radius: 13px;
+  background: rgb(255 255 255 / 96%);
+  padding: 12px 15px;
+  color: #52525b;
+  font-size: 13px;
+  box-shadow: 0 8px 24px rgb(24 24 27 / 8%);
+}
+
+.dashboard-warehouse-state--empty {
+  display: grid;
+  justify-items: start;
+  gap: 9px;
+  width: min(340px, calc(100vw - 32px));
+  padding: 20px;
+}
+
+.dashboard-warehouse-state--empty strong {
+  color: #18181b;
+  font-size: 15px;
+}
+
+.dashboard-warehouse-state--empty span {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dashboard-warehouse-notice {
+  top: auto;
+  bottom: 24px;
+  color: #166534;
+  border-color: #bbf7d0;
 }
 
 .dashboard-brand,
@@ -524,7 +567,6 @@
   background: #fff;
   padding: 0;
   color: #18181b;
-  box-shadow: 0 20px 64px rgb(24 24 27 / 22%);
 }
 
 .inventory-create-dialog::backdrop {
@@ -618,6 +660,7 @@
 
 .warehouse-preview {
   display: flex;
+  flex-wrap: wrap;
   width: 290px;
   max-width: calc(100vw - 24px);
   align-items: center;
@@ -654,6 +697,13 @@
 .warehouse-preview__link:hover {
   background: #18181b;
   color: #fff;
+}
+
+.warehouse-preview__actions {
+  display: flex;
+  width: 100%;
+  gap: 7px;
+  margin-top: 1px;
 }
 
 .warehouse-placeholder-shell {
@@ -718,6 +768,17 @@
     top: calc(max(10px, env(safe-area-inset-top)) + 104px);
     left: 12px;
     max-width: min(300px, calc(100vw - 24px));
+    flex-wrap: wrap;
+  }
+
+  .dashboard-warehouse-state:not(.dashboard-warehouse-state--empty) {
+    top: calc(50% + 20px);
+  }
+
+  .dashboard-warehouse-notice {
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 24px);
+    text-align: center;
   }
 
   .dashboard-brand {
@@ -919,4 +980,74 @@
   .warehouse-preview__link {
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Creation and editing surfaces sit beside the existing section panel. */
+.workspace-editor-dialog {
+  inset: 18px auto 18px calc(92px + min(390px, calc(100vw - 112px)) + 12px);
+  z-index: 1500;
+  width: min(840px, calc(100vw - 520px));
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 18px;
+  animation: workspace-editor-enter 180ms ease-out both;
+}
+
+.workspace-editor-dialog:not([open]) {
+  display: none;
+}
+
+.workspace-editor-dialog .inventory-create-dialog__form {
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.workspace-editor-dialog .inventory-create-dialog__fields {
+  flex: 1 1 auto;
+}
+
+.workspace-editor-dialog.event-create-dialog .event-create-dialog__form {
+  height: 100%;
+  min-height: 0;
+}
+
+@keyframes workspace-editor-enter {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (max-width: 1100px) {
+  .workspace-editor-dialog {
+    inset: 18px 18px 18px 92px;
+    width: auto;
+  }
+
+  .dashboard-shell[data-editor-open="true"] .dashboard-panel {
+    pointer-events: none;
+    visibility: hidden;
+  }
+}
+
+@media (max-width: 767px) {
+  .workspace-editor-dialog {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  }
+
+  .workspace-editor-dialog.event-create-dialog {
+    padding: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-editor-dialog { animation: none; }
 }

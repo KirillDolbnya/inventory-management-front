@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, ChevronUp, MapPin, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowLeft, Boxes, ChevronDown, ChevronUp, MapPin, Pencil, Trash2, Warehouse as WarehouseIcon } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,10 @@ type WarehouseInfoCardProps = {
   rackCount: number;
   cellCount: number;
   freeCellCount: number;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDeleteLayout: () => void;
+  onManageRacks: () => void;
 };
 
 export function WarehouseInfoCard({
@@ -18,6 +22,10 @@ export function WarehouseInfoCard({
   rackCount,
   cellCount,
   freeCellCount,
+  onEdit,
+  onDelete,
+  onDeleteLayout,
+  onManageRacks,
 }: WarehouseInfoCardProps) {
   const [expanded, setExpanded] = useState(false);
   const metrics = [
@@ -72,6 +80,27 @@ export function WarehouseInfoCard({
           </div>
         ))}
       </dl>
+      <div aria-label="Обозначения ячеек" className="warehouse-info-card__cell-legend">
+        <span><i aria-hidden="true" className="is-empty" /> Пустая</span>
+        <span><i aria-hidden="true" className="is-occupied" /> Занятая</span>
+        <span><i aria-hidden="true" className="is-selected" /> Выбрана</span>
+      </div>
+      <div className="warehouse-info-card__actions">
+        <div className="warehouse-info-card__actions-main">
+          <Button className="h-9 rounded-lg px-2 text-xs" onClick={onManageRacks} type="button" variant="outline">
+            <Boxes aria-hidden="true" size={13} /> Стеллажи
+          </Button>
+          <Button className="h-9 rounded-lg px-2 text-xs" onClick={onEdit} type="button" variant="outline">
+            <Pencil aria-hidden="true" size={13} /> Изменить
+          </Button>
+          <Button aria-label="Удалить склад" className="size-9 rounded-lg text-destructive hover:text-destructive" onClick={onDelete} size="icon" type="button" variant="outline">
+            <Trash2 aria-hidden="true" size={14} />
+          </Button>
+        </div>
+        <Button className="warehouse-info-card__delete-layout h-9 rounded-lg px-2 text-xs" onClick={onDeleteLayout} type="button" variant="outline">
+          Удалить планировку
+        </Button>
+      </div>
     </section>
   );
 }

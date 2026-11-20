@@ -20,6 +20,22 @@ export type CreatedInventory = {
   quantity: number;
 };
 
+export type UpdatedInventory = CreatedInventory;
+
+export type InventoryDetail = {
+  id: number;
+  name: string;
+  description: string | null;
+  quantity: number;
+  placements: Array<{ id: number; cell_id: number; quantity: number }>;
+};
+
+export type UpdateInventoryInput = {
+  name: string;
+  description: string | null;
+  quantity: number;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -116,6 +132,39 @@ function parseCreatedInventory(value: unknown): CreatedInventory {
   };
 }
 
+function parseInventoryDetail(value: unknown): InventoryDetail {
+  if (
+    !isRecord(value) ||
+    !isPositiveInteger(value.id) ||
+    typeof value.name !== "string" ||
+    !(typeof value.description === "string" || value.description === null) ||
+    !isNonNegativeInteger(value.quantity) ||
+    !Array.isArray(value.placements)
+  ) {
+    throw new ApiError("Unexpected inventory detail in API response", 0, undefined, "response");
+  }
+
+  const placements = value.placements.map((placement): InventoryDetail["placements"][number] => {
+    if (
+      !isRecord(placement) ||
+      !isPositiveInteger(placement.id) ||
+      !isPositiveInteger(placement.cell_id) ||
+      !isPositiveInteger(placement.quantity)
+    ) {
+      throw new ApiError("Unexpected inventory placement in API response", 0, undefined, "response");
+    }
+    return { id: placement.id, cell_id: placement.cell_id, quantity: placement.quantity };
+  });
+
+  return {
+    id: value.id,
+    name: value.name,
+    description: value.description,
+    quantity: value.quantity,
+    placements,
+  };
+}
+
 export const inventoryApi = {
   async getAll(): Promise<InventoryItem[]> {
     const response = await requestApi<unknown>("inventories", { cache: "no-store" });
@@ -131,6 +180,23 @@ export const inventoryApi = {
       body: JSON.stringify(input),
     });
     return parseCreatedInventory(response);
+  },
+
+  async getById(inventoryId: number): Promise<InventoryDetail> {
+    const response = await requestApi<unknown>(`inventories/${inventoryId}`, { cache: "no-store" });
+    return parseInventoryDetail(response);
+  },
+
+  async update(inventoryId: number, input: UpdateInventoryInput): Promise<UpdatedInventory> {
+    const response = await requestApi<unknown>(`inventories/${inventoryId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+    return parseCreatedInventory(response);
+  },
+
+  async delete(inventoryId: number): Promise<void> {
+    await requestApi<undefined>(`inventories/${inventoryId}`, { method: "DELETE" });
   },
 
 };

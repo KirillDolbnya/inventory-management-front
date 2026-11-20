@@ -4,15 +4,30 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { Cell, Rack, WarehouseLayout } from "@/features/warehouse/types";
+import { getOutlineBounds } from "@/features/warehouse/utils/wall-outline";
 
 const SHELF_BASE_Y = 0.36;
 const SHELF_BOARD_CENTER_OFFSET = 0.075;
 const SHELF_BOARD_THICKNESS = 0.065;
 const RACK_POST_WIDTH = 0.09;
+const CELL_MARKER_RADIUS = 0.155;
 const EMPTY_OCCUPIED_CELL_IDS = new Set<number>();
 
 function getRackShelfY(level: number, levelSpacing: number) {
   return SHELF_BASE_Y + (level - 1) * levelSpacing;
+}
+
+function getCellMarkerRadius(bayWidth: number, levelSpacing: number, levelsCount: number) {
+  const verticalRadius = levelsCount > 1
+    ? Math.max(0.012, (levelSpacing - SHELF_BOARD_THICKNESS) / 2)
+    : CELL_MARKER_RADIUS;
+  return Math.min(CELL_MARKER_RADIUS, bayWidth * 0.42, verticalRadius);
+}
+
+function getCellMarkerY(level: number, levelSpacing: number, radius: number) {
+  const shelfTop = getRackShelfY(level, levelSpacing) +
+    SHELF_BOARD_CENTER_OFFSET + SHELF_BOARD_THICKNESS / 2;
+  return shelfTop + radius + 0.002;
 }
 
 export interface WarehouseCameraApi {
@@ -108,6 +123,15 @@ function WarehouseRoom({
     () => new Map(layout.racks.map((rackLayout) => [rackLayout.rackId, rackLayout])),
     [layout.racks],
   );
+  const floorShape = useMemo(() => {
+    const shape = new THREE.Shape();
+    layout.wallOutline.forEach((point, index) => {
+      if (index === 0) shape.moveTo(point.x, -point.z);
+      else shape.lineTo(point.x, -point.z);
+    });
+    shape.closePath();
+    return shape;
+  }, [layout.wallOutline]);
 
   return (
     <>
@@ -128,16 +152,21 @@ function WarehouseRoom({
 
       {modelUrl ? (
         <Suspense fallback={null}>
-          <WarehouseModel modelUrl={modelUrl} onRoomChange={onModelRoomChange} />
+          <WarehouseModel
+            hiddenWallIndex={layout.hiddenWallIndex}
+            modelUrl={modelUrl}
+            onRoomChange={onModelRoomChange}
+            wallCount={layout.wallOutline.length}
+          />
         </Suspense>
       ) : (
         <>
-          <mesh position={[0, -0.055, 0]}>
-            <boxGeometry args={[layout.room.width, 0.11, layout.room.length]} />
-            <meshStandardMaterial color="#e5e9ee" roughness={0.88} />
+          <mesh position={[0, -0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <extrudeGeometry args={[floorShape, { depth: 0.11, bevelEnabled: false }]} />
+            <meshStandardMaterial color="#e5e9ee" roughness={0.88} side={THREE.DoubleSide} />
           </mesh>
 
-          {layout.walls.map((wall) => (
+          {layout.walls.map((wall, index) => index !== layout.hiddenWallIndex && (
             <WarehouseWall key={wall.id} wall={wall} />
           ))}
 
@@ -179,21 +208,62 @@ function WarehouseRoom({
 
 function WarehouseModel({
   modelUrl,
+  hiddenWallIndex,
   onRoomChange,
+  wallCount,
 }: {
   modelUrl: string;
+  hiddenWallIndex: number | null | undefined;
   onRoomChange: (room: WarehouseLayout["room"]) => void;
+  wallCount: number;
 }) {
   const { scene } = useGLTF(modelUrl);
-  const modelScene = useMemo(() => scene.clone(true), [scene]);
+  const modelScene = useMemo(() => {
+    const clone = scene.clone(true);
+    let metadataHiddenWallIndex: unknown;
+    let metadataWallCount = 0;
+    if (hiddenWallIndex === undefined) {
+      const layoutMetadata = clone.userData.warehouseLayout as {
+        hiddenWallIndex?: unknown;
+        wallOutline?: unknown;
+      } | undefined;
+      metadataHiddenWallIndex = layoutMetadata?.hiddenWallIndex;
+      metadataWallCount = Array.isArray(layoutMetadata?.wallOutline) ? layoutMetadata.wallOutline.length : 0;
+      if (metadataHiddenWallIndex === undefined) {
+        clone.traverse((object) => {
+          if (metadataHiddenWallIndex !== undefined) return;
+          const childMetadata = object.userData.warehouseLayout as {
+            hiddenWallIndex?: unknown;
+            wallOutline?: unknown;
+          } | undefined;
+          metadataHiddenWallIndex = childMetadata?.hiddenWallIndex;
+          metadataWallCount = Array.isArray(childMetadata?.wallOutline) ? childMetadata.wallOutline.length : 0;
+        });
+      }
+    }
+    const wallIndex = hiddenWallIndex === undefined
+      ? metadataHiddenWallIndex
+      : hiddenWallIndex;
+    const maxWallCount = hiddenWallIndex === undefined ? metadataWallCount : wallCount;
+    if (
+      typeof wallIndex === "number" &&
+      Number.isInteger(wallIndex) &&
+      wallIndex >= 0 &&
+      wallIndex < maxWallCount
+    ) {
+      const wallGroup = clone.getObjectByName(`wall-wall-${wallIndex}`);
+      if (wallGroup) wallGroup.visible = false;
+    }
+    return clone;
+  }, [hiddenWallIndex, scene, wallCount]);
 
   useEffect(() => {
-    const bounds = new THREE.Box3().setFromObject(modelScene);
+    const bounds = new THREE.Box3().setFromObject(scene);
     const size = bounds.getSize(new THREE.Vector3());
     if (size.x > 0 && size.y > 0 && size.z > 0) {
       onRoomChange({ width: size.x, height: size.y, length: size.z });
     }
-  }, [modelScene, onRoomChange]);
+  }, [onRoomChange, scene]);
 
   return <primitive object={modelScene} />;
 }
@@ -323,7 +393,6 @@ function WarehouseRack({
       <CellMarkers
         cells={rack.cells}
         cellsPerLevel={rack.cells_per_level}
-        height={height}
         levelSpacing={levelSpacing}
         levelsCount={rack.levels_count}
         selectedCellId={selectedCellId}
@@ -342,7 +411,6 @@ function CellMarkers({
   cells,
   cellsPerLevel,
   width,
-  height,
   levelSpacing,
   levelsCount,
   selectedCellId,
@@ -353,7 +421,6 @@ function CellMarkers({
   cells: Cell[];
   cellsPerLevel: number;
   width: number;
-  height: number;
   levelSpacing: number;
   levelsCount: number;
   selectedCellId: number | null;
@@ -363,19 +430,33 @@ function CellMarkers({
 }) {
   const markersRef = useRef<THREE.InstancedMesh>(null);
   const hitTargetsRef = useRef<THREE.InstancedMesh>(null);
+  const selectedRingsRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const markerColor = useMemo(() => new THREE.Color(), []);
+  const selectedColor = useMemo(() => new THREE.Color("#2563eb"), []);
   const [hoveredCellId, setHoveredCellId] = useState<number | null>(null);
   const cellByInstance = useMemo(() => cells, [cells]);
 
   const updateInstances = useCallback(() => {
     const mesh = markersRef.current;
     const hitTargets = hitTargetsRef.current;
-    if (!mesh && !hitTargets) return;
+    const selectedRings = selectedRingsRef.current;
+    if (!mesh && !hitTargets && !selectedRings) return;
     const bayWidth = width / cellsPerLevel;
+    const markerRadius = getCellMarkerRadius(bayWidth, levelSpacing, levelsCount);
 
     cells.forEach((cell, index) => {
-      const scale = cell.id === targetCellId ? 1.46 : cell.id === selectedCellId ? 1.34 : cell.id === hoveredCellId ? 1.2 : 1;
+      const requestedScale = cell.id === targetCellId ? 1.46 : cell.id === selectedCellId ? 1.14 : cell.id === hoveredCellId ? 1.2 : 1;
+      const markerMaxScale = Math.min(
+        bayWidth * 0.9 / (2 * markerRadius),
+        levelsCount > 1 ? levelSpacing * 0.9 / (2 * markerRadius) : requestedScale,
+      );
+      const visualScale = Math.min(requestedScale, markerMaxScale);
+      const hitMaxScale = Math.min(
+        bayWidth * 0.92 / 0.44,
+        levelsCount > 1 ? levelSpacing * 0.92 / 0.44 : requestedScale,
+      );
+      const hitScale = Math.min(requestedScale, hitMaxScale);
       const bayLeft = cell.position === 1
         ? -width / 2 + RACK_POST_WIDTH
         : -width / 2 + bayWidth * (cell.position - 1);
@@ -383,30 +464,28 @@ function CellMarkers({
         ? width / 2 - RACK_POST_WIDTH
         : -width / 2 + bayWidth * cell.position;
       const x = (bayLeft + bayRight) / 2;
-      const cellBottom = getRackShelfY(cell.level, levelSpacing) +
-        SHELF_BOARD_CENTER_OFFSET + SHELF_BOARD_THICKNESS / 2;
-      const cellTop = cell.level < levelsCount
-        ? getRackShelfY(cell.level + 1, levelSpacing) +
-          SHELF_BOARD_CENTER_OFFSET - SHELF_BOARD_THICKNESS / 2
-        : height - 0.12;
-      const y = cellBottom + Math.max(0, cellTop - cellBottom) * 0.46;
+      const y = getCellMarkerY(cell.level, levelSpacing, markerRadius);
       dummy.position.set(x, y, 0);
-      dummy.scale.setScalar(scale);
+      dummy.scale.setScalar((markerRadius / CELL_MARKER_RADIUS) * visualScale);
       dummy.updateMatrix();
       mesh?.setMatrixAt(index, dummy.matrix);
+      dummy.scale.setScalar(hitScale);
+      dummy.updateMatrix();
       hitTargets?.setMatrixAt(index, dummy.matrix);
       markerColor.set(
         cell.id === targetCellId
           ? "#d97706"
-          : cell.id === selectedCellId
-            ? "#1d4ed8"
-            : cell.id === hoveredCellId
-            ? "#60a5fa"
-            : occupiedCellIds.has(cell.id)
-              ? "#3f9b72"
-              : "#a1a1aa",
+          : cell.id === hoveredCellId
+            ? occupiedCellIds.has(cell.id) ? "#58ad86" : "#b4b4bc"
+            : occupiedCellIds.has(cell.id) ? "#3f9b72" : "#a1a1aa",
       );
       mesh?.setColorAt(index, markerColor);
+
+      dummy.position.set(x, y, 0.035);
+      dummy.scale.setScalar(cell.id === selectedCellId ? markerRadius / CELL_MARKER_RADIUS : 0);
+      dummy.updateMatrix();
+      selectedRings?.setMatrixAt(index, dummy.matrix);
+      selectedRings?.setColorAt(index, selectedColor);
     });
 
     if (mesh) {
@@ -414,7 +493,11 @@ function CellMarkers({
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
     if (hitTargets) hitTargets.instanceMatrix.needsUpdate = true;
-  }, [cells, cellsPerLevel, dummy, height, hoveredCellId, levelSpacing, levelsCount, markerColor, occupiedCellIds, selectedCellId, targetCellId, width]);
+    if (selectedRings) {
+      selectedRings.instanceMatrix.needsUpdate = true;
+      if (selectedRings.instanceColor) selectedRings.instanceColor.needsUpdate = true;
+    }
+  }, [cells, cellsPerLevel, dummy, hoveredCellId, levelSpacing, levelsCount, markerColor, occupiedCellIds, selectedCellId, selectedColor, targetCellId, width]);
 
   useLayoutEffect(updateInstances, [updateInstances]);
 
@@ -427,8 +510,12 @@ function CellMarkers({
         args={[undefined, undefined, cells.length]}
         ref={markersRef}
       >
-        <sphereGeometry args={[0.155, 16, 12]} />
+        <sphereGeometry args={[CELL_MARKER_RADIUS, 16, 12]} />
         <meshStandardMaterial roughness={0.3} />
+      </instancedMesh>
+      <instancedMesh args={[undefined, undefined, cells.length]} ref={selectedRingsRef}>
+        <ringGeometry args={[0.19, 0.245, 24]} />
+        <meshBasicMaterial depthWrite={false} side={THREE.DoubleSide} toneMapped={false} />
       </instancedMesh>
       <instancedMesh
         args={[undefined, undefined, cells.length]}
@@ -564,9 +651,17 @@ function InitialCamera({
   onInitialized: () => void;
 }) {
   const { camera, size } = useThree();
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    const target = new THREE.Vector3(0, 1.35, 0);
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    const outlineBounds = getOutlineBounds(layout.wallOutline);
+    const target = new THREE.Vector3(
+      (outlineBounds.minX + outlineBounds.maxX) / 2,
+      1.35,
+      (outlineBounds.minZ + outlineBounds.maxZ) / 2,
+    );
     const aspect = size.width / Math.max(size.height, 1);
     const fov = THREE.MathUtils.degToRad("fov" in camera ? camera.fov : 38);
     const tangent = Math.tan(fov / 2);
@@ -587,9 +682,9 @@ function InitialCamera({
     const horizontalDistance = viewDistance * Math.cos(elevationAngle);
 
     camera.position.set(
-      horizontalDistance * Math.cos(azimuth),
-      horizontalDistance * elevation,
-      horizontalDistance * Math.sin(azimuth),
+      target.x + horizontalDistance * Math.cos(azimuth),
+      target.y + horizontalDistance * elevation,
+      target.z + horizontalDistance * Math.sin(azimuth),
     );
     camera.lookAt(target);
     const controls = controlsRef.current;
@@ -599,7 +694,7 @@ function InitialCamera({
       controls.saveState();
     }
     onInitialized();
-  }, [camera, controlsRef, layout.room.height, layout.room.length, layout.room.width, onInitialized, size.height, size.width]);
+  }, [camera, controlsRef, layout.room.height, layout.room.length, layout.room.width, layout.wallOutline, onInitialized, size.height, size.width]);
 
   return null;
 }
@@ -624,14 +719,10 @@ function getCellWorldPosition(
     ? width / 2 - RACK_POST_WIDTH
     : -width / 2 + bayWidth * cell.position;
   const levelSpacing = rack.levels_count > 1 ? (height - 0.92) / (rack.levels_count - 1) : 0;
-  const cellBottom = getRackShelfY(cell.level, levelSpacing) +
-    SHELF_BOARD_CENTER_OFFSET + SHELF_BOARD_THICKNESS / 2;
-  const cellTop = cell.level < rack.levels_count
-    ? getRackShelfY(cell.level + 1, levelSpacing) + SHELF_BOARD_CENTER_OFFSET - SHELF_BOARD_THICKNESS / 2
-    : height - 0.12;
+  const markerRadius = getCellMarkerRadius(bayWidth, levelSpacing, rack.levels_count);
   const localPosition = new THREE.Vector3(
     (bayLeft + bayRight) / 2,
-    cellBottom + Math.max(0, cellTop - cellBottom) * 0.46,
+    getCellMarkerY(cell.level, levelSpacing, markerRadius),
     0,
   );
   localPosition.applyAxisAngle(

@@ -53,3 +53,18 @@ export interface CreatedEvent extends InventoryEvent {
     quantity: number;
   }>;
 }
+
+export type UpdateEventInput = Partial<Pick<InventoryEvent, "name" | "description" | "starts_at" | "ends_at">>;
+
+export interface ReservationInput {
+  inventory_placement_id: number;
+  quantity: number;
+}
+
+export interface ReservationMutationResult {
+  id: number;
+  event_id: number;
+  inventory_id: number;
+  cell_id: number;
+  quantity: number;
+}

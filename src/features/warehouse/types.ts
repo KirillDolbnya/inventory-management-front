@@ -17,6 +17,8 @@ export interface WarehouseLayout {
     length: number;
     height: number;
   };
+  wallOutline: LayoutPoint[];
+  hiddenWallIndex?: number | null;
   walls: LayoutWall[];
   columns: LayoutColumn[];
   racks: LayoutRack[];
@@ -26,6 +28,11 @@ export interface WarehouseLayout {
     unit: string;
     origin: string;
   };
+}
+
+export interface LayoutPoint {
+  x: number;
+  z: number;
 }
 
 export interface LayoutWall {

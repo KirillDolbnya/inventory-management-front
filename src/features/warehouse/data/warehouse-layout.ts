@@ -6,6 +6,13 @@ export const demoWarehouseLayout: WarehouseLayout = {
     length: 8.2,
     height: 5.2,
   },
+  wallOutline: [
+    { x: -7.2, z: -4.1 },
+    { x: 7.2, z: -4.1 },
+    { x: 7.2, z: 4.1 },
+    { x: -7.2, z: 4.1 },
+  ],
+  hiddenWallIndex: null,
   walls: [
     {
       id: "rear-wall",

@@ -1,7 +1,7 @@
-import { ArrowLeft, CalendarCheck2, CalendarClock, CalendarX2, LoaderCircle, MapPin, Package, RefreshCw } from "lucide-react";
+import { ArrowLeft, CalendarCheck2, CalendarClock, CalendarX2, LoaderCircle, MapPin, Package, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import type { InventoryEventDetail } from "@/features/dashboard/types/inventory-event";
+import type { EventReservation, InventoryEventDetail } from "@/features/dashboard/types/inventory-event";
 import { getEventTimeStatus } from "@/features/dashboard/utils/event-time";
 
 type EventDetailProps = {
@@ -10,6 +10,11 @@ type EventDetailProps = {
   error: string | null;
   onBack: () => void;
   onRetry: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onAddReservation: () => void;
+  onEditReservation: (reservation: EventReservation) => void;
+  onDeleteReservation: (reservation: EventReservation) => void;
 };
 
 const dateTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
@@ -20,7 +25,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
   minute: "2-digit",
 });
 
-export function EventDetail({ event, loading, error, onBack, onRetry }: EventDetailProps) {
+export function EventDetail({ event, loading, error, onBack, onRetry, onEdit, onDelete, onAddReservation, onEditReservation, onDeleteReservation }: EventDetailProps) {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -44,10 +49,18 @@ export function EventDetail({ event, loading, error, onBack, onRetry }: EventDet
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 pb-6 pt-4 sm:px-6">
-        <Button className="-ml-2 mb-4 h-9 w-fit rounded-lg px-2 text-muted-foreground" onClick={onBack} type="button" variant="ghost">
-          <ArrowLeft aria-hidden="true" size={16} />
-          Все события
-        </Button>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <Button className="-ml-2 h-10 min-w-0 rounded-lg px-2 text-muted-foreground" onClick={onBack} type="button" variant="ghost">
+            <ArrowLeft aria-hidden="true" size={16} />
+            Все события
+          </Button>
+          {event && !loading && !error && (
+            <div className="flex shrink-0 items-center gap-1">
+              <Button aria-label={`Редактировать событие ${event.name}`} className="size-10 rounded-lg" onClick={onEdit} size="icon" title="Редактировать событие" type="button" variant="ghost"><Pencil aria-hidden="true" size={16} /></Button>
+              <Button aria-label={`Удалить событие ${event.name}`} className="size-10 rounded-lg text-destructive hover:text-destructive" onClick={onDelete} size="icon" title="Удалить событие" type="button" variant="ghost"><Trash2 aria-hidden="true" size={16} /></Button>
+            </div>
+          )}
+        </div>
 
         {loading ? (
           <div className="flex min-h-56 items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
@@ -87,28 +100,33 @@ export function EventDetail({ event, loading, error, onBack, onRetry }: EventDet
 
             <div className="mt-7">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h4 className="text-sm font-semibold">Забронированный инвентарь</h4>
-                <span className="text-xs text-muted-foreground">{event.reservations.length}</span>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold">Забронированный инвентарь</h4>
+                  <span className="text-xs text-muted-foreground">{event.reservations.length} {getReservationWord(event.reservations.length)}</span>
+                </div>
+                <Button className="h-9 shrink-0 rounded-lg px-3" onClick={onAddReservation} type="button" variant="outline"><Plus aria-hidden="true" size={15} />Добавить</Button>
               </div>
               {event.reservations.length ? (
                 <ul className="divide-y divide-border rounded-xl border border-border bg-white">
                   {event.reservations.map((reservation) => (
-                    <li className="flex min-w-0 items-start gap-3 p-3.5" key={reservation.id}>
-                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                        <Package aria-hidden="true" size={15} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="break-words text-sm font-medium leading-5">{reservation.inventory.name}</p>
-                        <p className="mt-1 flex items-start gap-1 text-xs leading-5 text-muted-foreground">
-                          <MapPin aria-hidden="true" className="mt-0.5 shrink-0" size={12} />
-                          <span className="break-words">
-                            {reservation.warehouse.name} · стеллаж {reservation.rack.code} · ячейка {reservation.cell.number}
-                          </span>
-                        </p>
+                    <li className="min-w-0 p-3.5" key={reservation.id}>
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                          <Package aria-hidden="true" size={15} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words text-sm font-medium leading-5">{reservation.inventory.name}</p>
+                          <p className="mt-1 flex items-start gap-1 text-xs leading-5 text-muted-foreground">
+                            <MapPin aria-hidden="true" className="mt-0.5 shrink-0" size={12} />
+                            <span className="break-words">{reservation.warehouse.name} · стеллаж {reservation.rack.code} · ячейка {reservation.cell.number}</span>
+                          </p>
+                        </div>
+                        <span className="shrink-0 pt-0.5 text-sm font-semibold tabular-nums">{reservation.quantity.toLocaleString("ru-RU")} шт.</span>
                       </div>
-                      <span className="shrink-0 pt-0.5 text-sm font-semibold tabular-nums">
-                        {reservation.quantity.toLocaleString("ru-RU")} шт.
-                      </span>
+                      <div className="mt-2 flex justify-end gap-1">
+                        <Button aria-label={`Изменить бронирование ${reservation.inventory.name}`} className="h-9 rounded-lg px-3 text-xs" onClick={() => onEditReservation(reservation)} type="button" variant="ghost"><Pencil aria-hidden="true" size={14} />Изменить</Button>
+                        <Button aria-label={`Удалить бронирование ${reservation.inventory.name}`} className="h-9 rounded-lg px-3 text-xs text-destructive hover:text-destructive" onClick={() => onDeleteReservation(reservation)} type="button" variant="ghost"><Trash2 aria-hidden="true" size={14} />Удалить</Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -132,4 +150,13 @@ function DateField({ label, value }: { label: string; value: string }) {
       <dd className="text-sm font-medium tabular-nums sm:text-right">{dateTimeFormatter.format(new Date(value))}</dd>
     </div>
   );
+}
+
+function getReservationWord(count: number) {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return "бронирований";
+  if (last === 1) return "бронирование";
+  if (last >= 2 && last <= 4) return "бронирования";
+  return "бронирований";
 }

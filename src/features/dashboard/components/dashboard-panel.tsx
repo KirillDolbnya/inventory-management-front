@@ -1,8 +1,8 @@
 import { LoaderCircle, Plus, RefreshCw, X } from "lucide-react";
 import {
-  useEffect,
   useRef,
   useState,
+  useEffect,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -12,7 +12,7 @@ import { EventDetail } from "@/features/dashboard/components/event-detail";
 import { InventoryDetail } from "@/features/dashboard/components/inventory-detail";
 import { InventoryList } from "@/features/dashboard/components/inventory-list";
 import type { DashboardSection } from "@/features/dashboard/components/dashboard-navigation";
-import type { InventoryEvent, InventoryEventDetail } from "@/features/dashboard/types/inventory-event";
+import type { EventReservation, InventoryEvent, InventoryEventDetail } from "@/features/dashboard/types/inventory-event";
 import type { InventoryItem } from "@/features/dashboard/types/inventory";
 
 type SheetState = "closed" | "peek" | "expanded";
@@ -24,6 +24,10 @@ type DashboardPanelProps = {
   inventoryLoading: boolean;
   inventoryError: string | null;
   inventoryNotice: string | null;
+  inventoryDetailId: number | null;
+  inventoryDetail: InventoryItem | null;
+  inventoryDetailLoading: boolean;
+  inventoryDetailError: string | null;
   events: InventoryEvent[];
   eventsLoading: boolean;
   eventsError: string | null;
@@ -32,12 +36,22 @@ type DashboardPanelProps = {
   eventDetailLoading: boolean;
   eventDetailError: string | null;
   onRetryInventory: () => void;
+  onRetryInventoryDetail: () => void;
   onRetryEvents: () => void;
   onRetryEventDetail: () => void;
   onCreateEvent: () => void;
   onOpenEvent: (eventId: number) => void;
   onBackToEvents: () => void;
+  onEditEvent: () => void;
+  onDeleteEvent: () => void;
+  onAddReservation: () => void;
+  onEditReservation: (reservation: EventReservation) => void;
+  onDeleteReservation: (reservation: EventReservation) => void;
   onAddInventory: () => void;
+  onOpenInventory: (inventoryId: number) => void;
+  onBackToInventory: () => void;
+  onEditInventory: () => void;
+  onDeleteInventory: () => void;
   onOpenPlacement: (warehouseId: number, cellId: number) => void;
   onClose: () => void;
   onSheetStateChange: (state: SheetState) => void;
@@ -50,6 +64,10 @@ export function DashboardPanel({
   inventoryLoading,
   inventoryError,
   inventoryNotice,
+  inventoryDetailId,
+  inventoryDetail,
+  inventoryDetailLoading,
+  inventoryDetailError,
   events,
   eventsLoading,
   eventsError,
@@ -58,12 +76,22 @@ export function DashboardPanel({
   eventDetailLoading,
   eventDetailError,
   onRetryInventory,
+  onRetryInventoryDetail,
   onRetryEvents,
   onRetryEventDetail,
   onCreateEvent,
   onOpenEvent,
   onBackToEvents,
+  onEditEvent,
+  onDeleteEvent,
+  onAddReservation,
+  onEditReservation,
+  onDeleteReservation,
   onAddInventory,
+  onOpenInventory,
+  onBackToInventory,
+  onEditInventory,
+  onDeleteInventory,
   onOpenPlacement,
   onClose,
   onSheetStateChange,
@@ -71,7 +99,6 @@ export function DashboardPanel({
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [inventoryQuery, setInventoryQuery] = useState("");
-  const [selectedInventoryId, setSelectedInventoryId] = useState<number | null>(null);
   const dragStart = useRef<{ pointerId: number; y: number } | null>(null);
   const wasDragged = useRef(false);
   const isOpen = activeSection !== null;
@@ -107,12 +134,9 @@ export function DashboardPanel({
   const countLabel = activeSection === "events"
     ? `${count} ${getCountWord(count, "событие", "события", "событий")}`
     : `${count} ${getCountWord(count, "позиция", "позиции", "позиций")}`;
-  const selectedInventory = inventoryItems.find((item) => item.id === selectedInventoryId) ?? null;
 
   useEffect(() => {
-    if (!inventoryNotice) return;
-    setInventoryQuery("");
-    setSelectedInventoryId(null);
+    if (inventoryNotice) setInventoryQuery("");
   }, [inventoryNotice]);
 
   return (
@@ -172,6 +196,11 @@ export function DashboardPanel({
               event={eventDetail}
               loading={eventDetailLoading}
               onBack={onBackToEvents}
+              onAddReservation={onAddReservation}
+              onDelete={onDeleteEvent}
+              onDeleteReservation={onDeleteReservation}
+              onEdit={onEditEvent}
+              onEditReservation={onEditReservation}
               onRetry={onRetryEventDetail}
             />
           ) : (
@@ -202,12 +231,29 @@ export function DashboardPanel({
               </div>
             </div>
           )
-        ) : selectedInventory ? (
-          <InventoryDetail
-            item={selectedInventory}
-            onBack={() => setSelectedInventoryId(null)}
-            onOpenPlacement={onOpenPlacement}
-          />
+        ) : activeSection === "inventory" && inventoryDetailId !== null ? (
+          inventoryDetailLoading ? (
+            <div className="flex min-h-44 items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
+              <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+              Загружаем данные инвентаря…
+            </div>
+          ) : inventoryDetailError ? (
+            <div className="flex min-h-52 flex-col items-center justify-center px-5 text-center">
+              <p className="max-w-64 text-sm leading-5 text-muted-foreground" role="alert">{inventoryDetailError}</p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button className="h-10 rounded-lg" onClick={onBackToInventory} type="button" variant="outline">Назад к списку</Button>
+                <Button className="h-10 rounded-lg" onClick={onRetryInventoryDetail} type="button">Повторить</Button>
+              </div>
+            </div>
+          ) : inventoryDetail ? (
+            <InventoryDetail
+              item={inventoryDetail}
+              onBack={onBackToInventory}
+              onDelete={onDeleteInventory}
+              onEdit={onEditInventory}
+              onOpenPlacement={onOpenPlacement}
+            />
+          ) : null
         ) : (
           <InventoryList
             error={inventoryError}
@@ -218,7 +264,7 @@ export function DashboardPanel({
             onAdd={onAddInventory}
             onQueryChange={setInventoryQuery}
             onRetry={onRetryInventory}
-            onSelectItem={(item) => setSelectedInventoryId(item.id)}
+            onSelectItem={(item) => onOpenInventory(item.id)}
           />
         )}
       </div>

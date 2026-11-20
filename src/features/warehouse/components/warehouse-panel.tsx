@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { EventsTimeline } from "@/features/dashboard/components/events-timeline";
@@ -12,13 +12,23 @@ import type { Warehouse } from "@/features/dashboard/types/warehouse";
 import type { Cell, Rack, WarehouseCellItem, WarehouseInventoryItem, WarehousePanel } from "@/features/warehouse/types";
 
 type SheetState = "closed" | "peek" | "expanded";
+type CellNavigation = {
+  current: number;
+  total: number;
+  canPrevious: boolean;
+  canNext: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+};
 
 type WarehousePanelProps = {
   activePanel: WarehousePanel | null;
   sheetState: SheetState;
   inventoryItems: WarehouseInventoryItem[];
   events: InventoryEvent[];
+  eventsError: string | null;
   selectedCell: { rack: Rack; cell: Cell } | null;
+  cellNavigation: CellNavigation;
   currentWarehouse: Warehouse;
   currentRacks: Rack[];
   cellItems: WarehouseCellItem[];
@@ -51,7 +61,9 @@ export function WarehousePanel({
   sheetState,
   inventoryItems,
   events,
+  eventsError,
   selectedCell,
+  cellNavigation,
   currentWarehouse,
   currentRacks,
   cellItems,
@@ -116,7 +128,7 @@ export function WarehousePanel({
       ? `Ячейка №${selectedCell.cell.number}`
       : "Инвентарь";
   const subtitle = activePanel === "events"
-    ? `${events.length} событий`
+    ? eventsError ? "Список событий недоступен" : `${events.length} событий`
     : isCellPanel
       ? `Стеллаж ${selectedCell.rack.code} · уровень ${selectedCell.cell.level} · позиция ${selectedCell.cell.position}`
       : `${inventoryItems.length} позиций`;
@@ -172,7 +184,13 @@ export function WarehousePanel({
 
       <div className="warehouse-panel__content">
         {activePanel === "events" ? (
-          <EventsTimeline events={events} />
+          eventsError ? (
+            <p className="m-4 rounded-xl border border-border bg-muted/40 p-4 text-sm leading-5 text-muted-foreground" role="alert">
+              {eventsError}
+            </p>
+          ) : (
+            <EventsTimeline events={events} />
+          )
         ) : activePanel === "cell" && selectedCell ? (
           cellView === "place" ? (
             <CellPlacementForm inventoryItems={availableItems} onBack={onBackToCell} onPlace={onPlaceInventory} />
@@ -196,18 +214,31 @@ export function WarehousePanel({
               onUnplace={onUnplaceInventory}
             />
           ) : (
-            <CellInventoryList
-              cell={selectedCell.cell}
-              error={cellItemsError}
-              isLoading={cellItemsLoading}
-              items={cellItems}
-              notice={placementNotice}
-              onPlace={onOpenPlacement}
-              onRetry={onCellRetry}
-              onTransfer={onOpenTransfer}
-              onUnplace={onOpenUnplace}
-              rack={selectedCell.rack}
-            />
+            <>
+              {cellView === "details" && (
+                <div aria-label="Переключение ячеек стеллажа" className="warehouse-cell-switcher">
+                  <Button disabled={!cellNavigation.canPrevious} onClick={cellNavigation.onPrevious} type="button" variant="outline">
+                    <ChevronLeft aria-hidden="true" size={16} /> Предыдущая
+                  </Button>
+                  <span aria-live="polite">{cellNavigation.current} / {cellNavigation.total}</span>
+                  <Button disabled={!cellNavigation.canNext} onClick={cellNavigation.onNext} type="button" variant="outline">
+                    Следующая <ChevronRight aria-hidden="true" size={16} />
+                  </Button>
+                </div>
+              )}
+              <CellInventoryList
+                cell={selectedCell.cell}
+                error={cellItemsError}
+                isLoading={cellItemsLoading}
+                items={cellItems}
+                notice={placementNotice}
+                onPlace={onOpenPlacement}
+                onRetry={onCellRetry}
+                onTransfer={onOpenTransfer}
+                onUnplace={onOpenUnplace}
+                rack={selectedCell.rack}
+              />
+            </>
           )
         ) : (
           <WarehouseInventoryList items={inventoryItems} onOpenPlacement={onOpenInventoryPlacement} />

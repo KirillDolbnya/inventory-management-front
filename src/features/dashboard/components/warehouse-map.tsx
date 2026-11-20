@@ -1,5 +1,5 @@
 import L from "leaflet";
-import { ArrowUpRight, LocateFixed, Minus, Plus, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowUpRight, LocateFixed, Minus, Pencil, Plus, Trash2, Warehouse as WarehouseIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,8 @@ type WarehouseMapProps = {
   activeWarehouseId: number | null;
   onActiveWarehouseChange: (warehouseId: number | null) => void;
   onOpenWarehouse: (warehouseId: number) => void;
+  onEditWarehouse: (warehouse: Warehouse) => void;
+  onDeleteWarehouse: (warehouse: Warehouse) => void;
   onResetBounds: () => void;
   layoutKey: string;
   resetKey: number;
@@ -25,6 +27,8 @@ export function WarehouseMap({
   activeWarehouseId,
   onActiveWarehouseChange,
   onOpenWarehouse,
+  onEditWarehouse,
+  onDeleteWarehouse,
   onResetBounds,
   layoutKey,
   resetKey,
@@ -89,6 +93,8 @@ export function WarehouseMap({
           onPointerEnter={() => keepTooltipOpen(warehouse.id)}
           onPointerLeave={closeTooltipSoon}
           onOpenWarehouse={onOpenWarehouse}
+          onEditWarehouse={onEditWarehouse}
+          onDeleteWarehouse={onDeleteWarehouse}
           visible={activeWarehouseId === warehouse.id || hoveredWarehouseId === warehouse.id}
           warehouse={warehouse}
         />
@@ -105,6 +111,8 @@ function WarehouseMapMarker({
   visible,
   onActiveChange,
   onOpenWarehouse,
+  onEditWarehouse,
+  onDeleteWarehouse,
   onPointerEnter,
   onPointerLeave,
 }: {
@@ -113,6 +121,8 @@ function WarehouseMapMarker({
   visible: boolean;
   onActiveChange: () => void;
   onOpenWarehouse: (warehouseId: number) => void;
+  onEditWarehouse: (warehouse: Warehouse) => void;
+  onDeleteWarehouse: (warehouse: Warehouse) => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
 }) {
@@ -169,6 +179,8 @@ function WarehouseMapMarker({
           <WarehousePreview
             warehouse={warehouse}
             onOpenWarehouse={onOpenWarehouse}
+            onEditWarehouse={onEditWarehouse}
+            onDeleteWarehouse={onDeleteWarehouse}
             onPointerEnter={onPointerEnter}
             onPointerLeave={onPointerLeave}
           />
@@ -181,11 +193,15 @@ function WarehouseMapMarker({
 function WarehousePreview({
   warehouse,
   onOpenWarehouse,
+  onEditWarehouse,
+  onDeleteWarehouse,
   onPointerEnter,
   onPointerLeave,
 }: {
   warehouse: Warehouse;
   onOpenWarehouse: (warehouseId: number) => void;
+  onEditWarehouse: (warehouse: Warehouse) => void;
+  onDeleteWarehouse: (warehouse: Warehouse) => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
 }) {
@@ -223,6 +239,33 @@ function WarehousePreview({
       >
         <ArrowUpRight aria-hidden="true" size={15} />
       </a>
+      <div aria-label="Действия со складом" className="warehouse-preview__actions">
+        <Button
+          className="h-8 flex-1 rounded-md px-2 text-xs"
+          onClick={(event) => {
+            event.stopPropagation();
+            onEditWarehouse(warehouse);
+          }}
+          type="button"
+          variant="outline"
+        >
+          <Pencil aria-hidden="true" size={13} />
+          Изменить
+        </Button>
+        <Button
+          aria-label={`Удалить склад «${warehouse.name}»`}
+          className="size-8 rounded-md text-destructive hover:text-destructive"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDeleteWarehouse(warehouse);
+          }}
+          size="icon"
+          type="button"
+          variant="outline"
+        >
+          <Trash2 aria-hidden="true" size={14} />
+        </Button>
+      </div>
     </div>
   );
 }

@@ -9,10 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Warehouse } from "@/features/dashboard/types/warehouse";
 import { WarehouseLayoutEditor } from "@/features/warehouse-creation/components/warehouse-layout-editor";
-import { createWarehouseModelFile, makeDefaultLayout, readWarehouseModelLayout } from "@/features/warehouse-creation/services/layout-model";
+import { createWarehouseModelFile, makeDefaultLayout } from "@/features/warehouse-creation/services/layout-model";
+import { readWarehouseModelLayout } from "@/features/warehouse-creation/services/warehouse-model-reader";
 import { validateWarehouseLayout } from "@/features/warehouse-creation/services/layout-validation";
 import { warehouseApi, type AddressSuggestion } from "@/features/warehouse/api/warehouse-api";
 import type { Rack, WarehouseLayout } from "@/features/warehouse/types";
+import { applyWallOutline } from "@/features/warehouse/utils/wall-outline";
 import "@/features/warehouse-creation/warehouse-creation.css";
 
 const warehouseDetailsSchema = z.object({
@@ -44,10 +46,19 @@ function nextRackCode(racks: Rack[]) {
 function getErrorMessage(error: unknown, fallback: string) {
   if (!(error instanceof ApiError)) return fallback;
   if (error.status === 401) return "Сеанс завершён. Войдите в систему и повторите попытку.";
+  if (error.status === 403) return "У вас нет доступа для выполнения этого действия.";
+  if (error.status === 404) return "Склад или один из его объектов больше не существует. Обновите данные.";
+  if (error.status === 409) return "Операция невозможна, пока на складе есть активные размещения инвентаря.";
+  if (error.status === 419) return "Сеанс истёк. Обновите страницу и попробуйте снова.";
   if (error.status === 0) return "Не удалось подключиться к серверу. Проверьте соединение и повторите попытку.";
   if (error.status === 503) return "Не удалось получить подсказки адреса. Попробуйте позже.";
   if (error.status === 502) return "Сервис адресов вернул некорректные данные. Попробуйте ещё раз.";
-  return error.message || fallback;
+  if (error.status === 422) {
+    const firstFieldMessage = Object.values(error.payload?.errors ?? {}).flat()[0];
+    return firstFieldMessage ?? "Проверьте данные склада, стеллажей и планировки.";
+  }
+  if (error.status >= 500) return "Сервер не смог выполнить запрос. Попробуйте позже.";
+  return fallback;
 }
 
 function firstFieldError(error: unknown, field: string) {
@@ -58,19 +69,32 @@ function firstFieldError(error: unknown, field: string) {
 export type WarehouseCreationWizardProps = {
   open: boolean;
   initialWarehouseId?: number | null;
+  initialLayout?: WarehouseLayout | null;
+  context?: "dashboard" | "warehouse";
+  adjacent?: boolean;
+  returnToWarehouse?: boolean;
+  closeRequestRef?: { current: (() => boolean) | null };
   onClose: () => void;
   onWarehouseCreated: (warehouse: Warehouse) => void;
   onOpenWarehouse: (warehouseId: number) => void;
+  onLayoutSaved?: (layout: WarehouseLayout) => void;
 };
 
 export function WarehouseCreationWizard({
   open,
   initialWarehouseId = null,
+  initialLayout,
+  context = "dashboard",
+  adjacent = false,
+  returnToWarehouse = false,
+  closeRequestRef,
   onClose,
   onWarehouseCreated,
   onOpenWarehouse,
+  onLayoutSaved,
 }: WarehouseCreationWizardProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const initialLayoutRef = useRef(initialLayout);
   const addressListId = "warehouse-address-suggestions";
   const [step, setStep] = useState<WizardStep>(1);
   const [warehouse, setWarehouse] = useState<Warehouse | null>(null);
@@ -89,6 +113,7 @@ export function WarehouseCreationWizard({
   const [creatingRack, setCreatingRack] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutSaved, setLayoutSaved] = useState(false);
+  const [layoutExists, setLayoutExists] = useState(false);
   const [layoutDirty, setLayoutDirty] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
@@ -104,13 +129,20 @@ export function WarehouseCreationWizard({
   const resetRackForm = rackForm.reset;
   const addressValue = warehouseForm.watch("address");
   const layoutValidation = useMemo(() => validateWarehouseLayout(layout, racks), [layout, racks]);
+  const isExistingWarehouseEditor = context === "warehouse" && Boolean(initialWarehouseId);
+  const warehouseFormDirty = warehouseForm.formState.isDirty;
+  const rackFormDirty = rackForm.formState.isDirty;
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) dialog.show();
     if (!open && dialog.open) dialog.close();
   }, [open]);
+
+  useEffect(() => {
+    initialLayoutRef.current = initialLayout;
+  }, [initialLayout]);
 
   useEffect(() => {
     if (!open || initialWarehouseId) return;
@@ -126,6 +158,7 @@ export function WarehouseCreationWizard({
     setLayoutError("");
     setLoadError("");
     setLayoutSaved(false);
+    setLayoutExists(false);
     setLayoutDirty(false);
     setShowCloseConfirm(false);
     resetWarehouseForm({ name: "", address: "" });
@@ -134,6 +167,7 @@ export function WarehouseCreationWizard({
 
   useEffect(() => {
     if (!open || !initialWarehouseId) return;
+    const preservedLayout = initialLayoutRef.current;
     let current = true;
     setLoadingExisting(true);
     setLoadError("");
@@ -156,37 +190,46 @@ export function WarehouseCreationWizard({
 
         setWarehouse(loadedWarehouse);
         setRacks(loadedRacks);
+        setLayoutExists(Boolean(savedLayout));
         resetWarehouseForm({ name: loadedWarehouse.name, address: loadedWarehouse.address });
 
         if (savedLayout) {
-          const metadata = await readWarehouseModelLayout(savedLayout.model.url).catch(() => null);
+          const metadata = preservedLayout ? null : await readWarehouseModelLayout(savedLayout.model.url);
           if (!current) return;
-          const room = metadata?.room ?? { width: 14.4, length: 8.2, height: 5.2 };
-          const defaultLayout = makeDefaultLayout(loadedRacks, room);
+          const geometry = preservedLayout ?? makeDefaultLayout([], metadata?.room);
           const savedRackIds = new Set(savedLayout.racks.map((rack) => rack.id));
-          setLayout({
-            ...defaultLayout,
-            columns: metadata?.columns ?? [],
+          const wallOutline = savedLayout.walls?.outline ?? geometry.wallOutline;
+          const restoredLayout = applyWallOutline({
+            ...geometry,
+            columns: geometry.columns ?? metadata?.columns ?? [],
             model: savedLayout.model,
-            racks: defaultLayout.racks.map((defaultRack) => {
-              const savedRack = savedLayout.racks.find((rack) => rack.id === defaultRack.rackId);
-              return savedRack ? {
+          }, wallOutline);
+          const savedHiddenWallIndex = geometry.hiddenWallIndex ?? metadata?.hiddenWallIndex;
+          setLayout({
+            ...restoredLayout,
+            hiddenWallIndex: typeof savedHiddenWallIndex === "number" && savedHiddenWallIndex < wallOutline.length
+              ? savedHiddenWallIndex
+              : null,
+            columns: geometry.columns ?? metadata?.columns ?? [],
+            model: savedLayout.model,
+            racks: savedLayout.racks
+              .filter((savedRack) => loadedRacks.some((rack) => rack.id === savedRack.id))
+              .map((savedRack) => ({
                 rackId: savedRack.id,
-                position: savedRack.position,
+                position: { ...savedRack.position },
                 rotation_y_deg: savedRack.rotation_y_deg,
-                dimensions: savedRack.dimensions,
-              } : defaultRack;
-            }),
+                dimensions: { ...savedRack.dimensions },
+              })),
           });
           const everyRackConfigured = loadedRacks.every((rack) => savedRackIds.has(rack.id));
           setLayoutSaved(everyRackConfigured);
           setLayoutDirty(!everyRackConfigured);
           setStep(3);
         } else {
-          setLayout(makeDefaultLayout(loadedRacks));
+          setLayout(makeDefaultLayout(context === "warehouse" ? [] : loadedRacks));
           setLayoutSaved(false);
-          setStep(loadedRacks.length ? 3 : 2);
-          if (loadedRacks.length) setLayoutDirty(true);
+          setStep(context === "warehouse" || loadedRacks.length ? 3 : 2);
+          if (loadedRacks.length && context !== "warehouse") setLayoutDirty(true);
         }
         setLoadingExisting(false);
       })
@@ -199,7 +242,7 @@ export function WarehouseCreationWizard({
     return () => {
       current = false;
     };
-  }, [initialWarehouseId, open, resetWarehouseForm]);
+  }, [context, initialWarehouseId, open, resetWarehouseForm]);
 
   useEffect(() => {
     if (!open || warehouse || initialWarehouseId) return;
@@ -236,12 +279,36 @@ export function WarehouseCreationWizard({
   }, [addressValue, initialWarehouseId, open, selectedSuggestion, warehouse]);
 
   const requestClose = () => {
-    if (layoutDirty && !layoutSaved) {
+    const unsavedWarehouseForm = step === 1 && warehouseFormDirty;
+    const unsavedRackForm = step === 2 && rackFormDirty;
+    if (unsavedWarehouseForm || unsavedRackForm || layoutDirty && !layoutSaved) {
       setShowCloseConfirm(true);
       return;
     }
     onClose();
   };
+
+  const requestCloseForNavigation = () => {
+    if (creatingWarehouse || creatingRack || savingLayout || loadingExisting) return false;
+    const hasUnsavedChanges =
+      (step === 1 && warehouseFormDirty) ||
+      (step === 2 && rackFormDirty) ||
+      (layoutDirty && !layoutSaved);
+    const closeMessage = isExistingWarehouseEditor
+      ? "Закрыть редактор? Несохранённые изменения планировки будут отменены. Уже созданные стеллажи останутся сохранены."
+      : "Закрыть мастер? Уже созданные склад и стеллажи останутся сохранены, а несохранённые изменения будут потеряны.";
+    if (hasUnsavedChanges && !window.confirm(closeMessage)) return false;
+    onClose();
+    return true;
+  };
+
+  useEffect(() => {
+    if (!closeRequestRef) return;
+    closeRequestRef.current = requestCloseForNavigation;
+    return () => {
+      if (closeRequestRef.current === requestCloseForNavigation) closeRequestRef.current = null;
+    };
+  }, [closeRequestRef, creatingRack, creatingWarehouse, isExistingWarehouseEditor, layoutDirty, layoutSaved, loadingExisting, rackFormDirty, step, warehouseFormDirty]);
 
   const handleCreateWarehouse = async (values: WarehouseFormValues) => {
     if (!selectedSuggestion) {
@@ -258,6 +325,7 @@ export function WarehouseCreationWizard({
       setWarehouse(createdWarehouse);
       setLayout(makeDefaultLayout([]));
       setLayoutSaved(false);
+      setLayoutExists(false);
       setLayoutDirty(false);
       onWarehouseCreated(createdWarehouse);
       setStep(2);
@@ -290,36 +358,38 @@ export function WarehouseCreationWizard({
       });
       const nextRacks = [...racks, createdRack];
       setRacks(nextRacks);
-      setLayout((current) => {
-        const suggested = makeDefaultLayout(nextRacks, current.room);
-        const rackLayout = suggested.racks.find((item) => item.rackId === createdRack.id);
-        return {
-          ...current,
-          model: undefined,
-          racks: rackLayout ? [...current.racks, rackLayout] : current.racks,
-        };
-      });
+      if (context !== "warehouse") {
+        setLayout((current) => {
+          const suggested = makeDefaultLayout(nextRacks, current.room);
+          const rackLayout = suggested.racks.find((item) => item.rackId === createdRack.id);
+          return {
+            ...current,
+            model: undefined,
+            racks: rackLayout ? [...current.racks, rackLayout] : current.racks,
+          };
+        });
+      }
       setLayoutDirty(true);
       setLayoutSaved(false);
       rackForm.reset({ code: nextRackCode(nextRacks), levels_count: "3", cells_per_level: "4" });
     } catch (error) {
-      const backendCodeError = firstFieldError(error, "racks.0.code");
-      if (backendCodeError) rackForm.setError("code", { message: backendCodeError });
-      setRackError(getErrorMessage(error, "Не удалось создать стеллаж."));
+      const backendCodeError = firstFieldError(error, "racks.0.code") ?? firstFieldError(error, "code");
+      if (backendCodeError) {
+        const isDuplicateCode = backendCodeError.toUpperCase() === code;
+        const message = isDuplicateCode
+          ? `Код «${code}» уже используется на этом складе.`
+          : backendCodeError;
+        rackForm.setError("code", { message });
+        setRackError(isDuplicateCode ? message : getErrorMessage(error, "Не удалось создать стеллаж."));
+      } else {
+        setRackError(getErrorMessage(error, "Не удалось создать стеллаж."));
+      }
     } finally {
       setCreatingRack(false);
     }
   };
 
   const goToLayout = () => {
-    const hasEveryRack = layout.racks.length === racks.length &&
-      racks.every((rack) => layout.racks.some((item) => item.rackId === rack.id));
-    if (!hasEveryRack) {
-      setLayout((current) => {
-        const next = makeDefaultLayout(racks, current.room);
-        return { ...next, columns: current.columns };
-      });
-    }
     if (!layoutSaved) {
       setLayoutDirty(true);
     }
@@ -335,19 +405,28 @@ export function WarehouseCreationWizard({
       if (modelFile.size > 2 * 1024 * 1024) {
         throw new Error("Файл 3D-модели не должен превышать 2 МБ.");
       }
-      const response = await warehouseApi.saveLayout(
-        warehouse.id,
-        modelFile,
-        layout.racks.map((rack) => ({
+      const rackLayouts = layout.racks.map((rack) => ({
           id: rack.rackId,
           position: rack.position,
           rotation_y_deg: rack.rotation_y_deg,
           dimensions: rack.dimensions,
-        })),
-      );
-      setLayout((current) => ({ ...current, model: response.model }));
+        }));
+      const response = layoutExists
+        ? await warehouseApi.updateLayout(warehouse.id, modelFile, rackLayouts, layout.wallOutline)
+        : await warehouseApi.saveLayout(warehouse.id, modelFile, rackLayouts, layout.wallOutline);
+      const savedLayout = {
+        ...applyWallOutline(layout, response.walls?.outline ?? layout.wallOutline),
+        model: response.model,
+      };
+      setLayout(savedLayout);
+      onLayoutSaved?.(savedLayout);
       setLayoutSaved(true);
+      setLayoutExists(true);
       setLayoutDirty(false);
+      if (returnToWarehouse) {
+        onClose();
+        return;
+      }
       setStep(4);
     } catch (error) {
       setLayoutError(getErrorMessage(error, "Не удалось сохранить планировку. Данные остались в мастере."));
@@ -359,7 +438,7 @@ export function WarehouseCreationWizard({
   const openSavedWarehouse = () => {
     if (!warehouse) return;
     onClose();
-    onOpenWarehouse(warehouse.id);
+    if (!returnToWarehouse) onOpenWarehouse(warehouse.id);
   };
 
   const nextStep = (nextStep: WizardStep) => {
@@ -376,7 +455,7 @@ export function WarehouseCreationWizard({
   return (
     <dialog
       aria-labelledby="warehouse-wizard-title"
-      className="warehouse-wizard-dialog"
+      className={`warehouse-wizard-dialog${context === "warehouse" ? " warehouse-wizard-dialog--warehouse" : ""}${adjacent ? " warehouse-wizard-dialog--adjacent" : ""}${context === "dashboard" ? " warehouse-wizard-dialog--dashboard" : ""}`}
       onCancel={(event) => {
         event.preventDefault();
         requestClose();
@@ -391,12 +470,12 @@ export function WarehouseCreationWizard({
           <div className="warehouse-wizard__heading">
             <div aria-hidden="true" className="warehouse-wizard__icon"><WarehouseIcon size={18} /></div>
             <div className="min-w-0">
-              <p className="warehouse-wizard__eyebrow">Настройка склада</p>
-              <h1 id="warehouse-wizard-title">{step === 4 ? "Склад готов" : warehouse?.name ?? "Создать склад"}</h1>
+              <p className="warehouse-wizard__eyebrow">{isExistingWarehouseEditor ? "Редактирование планировки" : "Настройка склада"}</p>
+              <h1 id="warehouse-wizard-title">{isExistingWarehouseEditor ? warehouse?.name ?? "Планировка склада" : step === 4 ? "Склад готов" : warehouse?.name ?? "Создать склад"}</h1>
             </div>
           </div>
           <div className="warehouse-wizard__header-right">
-            {warehouse && step !== 4 && (
+            {warehouse && step !== 4 && !isExistingWarehouseEditor && (
               <span className="warehouse-wizard__saved-pill"><Check size={13} /> Склад сохранён</span>
             )}
             <Button
@@ -412,7 +491,7 @@ export function WarehouseCreationWizard({
           </div>
         </header>
 
-        {step !== 4 && (
+        {step !== 4 && !isExistingWarehouseEditor && (
           <nav aria-label="Этапы создания склада" className="warehouse-wizard-steps">
             {steps.map((item, index) => {
               const completed = item.id === 1 ? Boolean(warehouse) : item.id === 2 ? racks.length > 0 : layoutSaved;
@@ -628,6 +707,9 @@ export function WarehouseCreationWizard({
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-semibold">Стеллаж {rack.code}</p>
                             <p className="mt-1 text-xs text-muted-foreground">{rack.levels_count} уровня · {rack.cells_per_level} ячейки на уровне</p>
+                            {!layout.racks.some((item) => item.rackId === rack.id) && (
+                              <p className="mt-1 text-xs font-medium text-amber-700">Сохранён · ещё не размещён</p>
+                            )}
                           </div>
                           <span className="warehouse-rack-list__total">{rack.cells.length || rack.levels_count * rack.cells_per_level}<small>ячеек</small></span>
                         </article>
@@ -644,10 +726,10 @@ export function WarehouseCreationWizard({
           ) : step === 3 ? (
             <section className="warehouse-wizard-step warehouse-wizard-step--layout">
               <div className="warehouse-wizard-step__intro warehouse-wizard-step__intro--layout">
-                <span className="warehouse-wizard-step__index">03</span>
+                {!isExistingWarehouseEditor && <span className="warehouse-wizard-step__index">03</span>}
                 <div>
                   <h2>Планировка склада</h2>
-                  <p>Настройте размеры помещения и расположение всех стеллажей.</p>
+                  <p>{isExistingWarehouseEditor ? layoutExists ? "Измените стены, колонны и расположение стеллажей. Сохранённая расстановка загружена." : "Сохранённой планировки пока нет. Настройте помещение и вручную разместите стеллажи." : "Задайте размеры и форму помещения, затем расположите стеллажи на плане."}</p>
                 </div>
                 <span className="warehouse-wizard-count">{racks.length} стеллажей</span>
               </div>
@@ -678,21 +760,21 @@ export function WarehouseCreationWizard({
         </main>
 
         <footer className="warehouse-wizard__footer">
-          {step === 4 ? (
+          {step === 4 && !isExistingWarehouseEditor ? (
             <>
               <Button onClick={onClose} type="button" variant="outline">Закрыть</Button>
-              <Button onClick={openSavedWarehouse} type="button">Открыть склад <ArrowRight size={16} /></Button>
+              <Button onClick={openSavedWarehouse} type="button">{returnToWarehouse ? "Вернуться к складу" : "Открыть склад"} <ArrowRight size={16} /></Button>
             </>
           ) : (
             <>
               <Button
                 className="warehouse-wizard__back"
-                disabled={step === 1 || loadingExisting || creatingWarehouse || creatingRack || savingLayout}
-                onClick={() => setStep((current) => current === 3 ? 2 : 1)}
+                disabled={(!isExistingWarehouseEditor && step === 1) || loadingExisting || creatingWarehouse || creatingRack || savingLayout}
+                onClick={() => isExistingWarehouseEditor ? requestClose() : setStep((current) => current === 3 ? 2 : 1)}
                 type="button"
                 variant="outline"
               >
-                <ArrowLeft size={15} /> Назад
+                {isExistingWarehouseEditor ? <X size={15} /> : <ArrowLeft size={15} />}{isExistingWarehouseEditor ? "Отменить" : "Назад"}
               </Button>
               <div className="warehouse-wizard__footer-status">
                 {step === 1 && warehouse ? <><Check size={14} /> Данные склада сохранены</> : null}
@@ -728,11 +810,11 @@ export function WarehouseCreationWizard({
           <div className="warehouse-wizard-confirm" role="alertdialog" aria-modal="true" aria-labelledby="warehouse-wizard-confirm-title">
             <div className="warehouse-wizard-confirm__card">
               <span className="warehouse-wizard-confirm__icon"><AlertCircle size={18} /></span>
-              <h2 id="warehouse-wizard-confirm-title">Планировка не сохранена</h2>
-              <p>Склад и созданные стеллажи уже сохранены на сервере. Текущие изменения планировки пропадут, если закрыть мастер.</p>
+              <h2 id="warehouse-wizard-confirm-title">{isExistingWarehouseEditor ? "Отменить изменения планировки?" : "Планировка не сохранена"}</h2>
+              <p>{isExistingWarehouseEditor ? "Несохранённые изменения будут отменены. Созданные стеллажи останутся сохранены и смогут быть размещены позже." : warehouse ? "Склад и созданные стеллажи уже сохранены на сервере. Несохранённые изменения формы или планировки пропадут, если закрыть мастер." : "Несохранённые данные формы пропадут, если закрыть мастер."}</p>
               <div className="warehouse-wizard-confirm__actions">
                 <Button onClick={() => setShowCloseConfirm(false)} type="button" variant="outline">Продолжить работу</Button>
-                <Button onClick={onClose} type="button" variant="default">Закрыть мастер</Button>
+                <Button onClick={onClose} type="button" variant="default">{isExistingWarehouseEditor ? "Отменить изменения" : "Закрыть мастер"}</Button>
               </div>
             </div>
           </div>

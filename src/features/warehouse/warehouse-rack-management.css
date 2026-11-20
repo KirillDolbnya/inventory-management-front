@@ -1,0 +1,364 @@
+.warehouse-management-dialog.warehouse-rack-management-dialog {
+  inset: 18px 18px 18px 92px;
+  z-index: 1450;
+  width: min(680px, calc(100vw - 112px));
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  animation: rack-panel-enter 180ms ease-out both;
+}
+
+.warehouse-management-dialog.warehouse-rack-management-dialog::backdrop {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.warehouse-management-dialog.warehouse-rack-management-dialog .warehouse-management-dialog__surface {
+  height: 100%;
+  max-height: 100%;
+}
+
+.warehouse-rack-management-dialog__body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 22px;
+  overflow: hidden;
+}
+
+.warehouse-rack-management-dialog__summary,
+.warehouse-rack-management-dialog__footer,
+.warehouse-rack-management-dialog__rack-main,
+.warehouse-rack-management-dialog__rack-actions,
+.warehouse-rack-management-dialog__form-title,
+.warehouse-rack-management-dialog__form-actions,
+.warehouse-rack-management-dialog__confirm-actions {
+  display: flex;
+  align-items: center;
+}
+
+.warehouse-rack-management-dialog__summary {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.warehouse-rack-management-dialog__eyebrow {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.warehouse-rack-management-dialog__count {
+  margin-top: 3px;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.warehouse-rack-management-dialog__count span,
+.warehouse-rack-management-dialog__rack-main p span {
+  color: var(--muted-foreground);
+}
+
+.warehouse-rack-management-dialog__list {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  gap: 9px;
+  align-content: start;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.warehouse-rack-management-dialog__rack {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+}
+
+.warehouse-rack-management-dialog__rack-main {
+  min-width: 0;
+  gap: 12px;
+  padding: 12px;
+}
+
+.warehouse-rack-management-dialog__rack-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted-foreground);
+  background: var(--muted);
+}
+
+.warehouse-rack-management-dialog__rack-main h3,
+.warehouse-rack-management-dialog__form-title h3 {
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.warehouse-rack-management-dialog__rack-main p,
+.warehouse-rack-management-dialog__form-title p {
+  margin-top: 3px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.warehouse-rack-management-dialog__rack-actions {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.warehouse-rack-management-dialog__badge {
+  display: inline-flex;
+  margin-top: 6px;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #854d0e;
+  background: #fef3c7;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.warehouse-rack-management-dialog__empty,
+.warehouse-rack-management-dialog__state {
+  display: flex;
+  min-height: 140px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 22px;
+  text-align: center;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.warehouse-rack-management-dialog__empty > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--muted);
+}
+
+.warehouse-rack-management-dialog__empty strong {
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.warehouse-rack-management-dialog__empty p {
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+.warehouse-rack-management-dialog__state {
+  min-height: 108px;
+}
+
+.warehouse-rack-management-dialog__state--error {
+  border-color: color-mix(in srgb, var(--destructive) 24%, transparent);
+  color: var(--destructive);
+}
+
+.warehouse-rack-management-dialog__unplaced {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #fde68a;
+  border-radius: 11px;
+  padding: 12px;
+  color: #854d0e;
+  background: #fffbeb;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.warehouse-rack-management-dialog__unplaced > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.warehouse-rack-management-dialog__unplaced > div svg {
+  flex: 0 0 auto;
+}
+
+.warehouse-rack-management-dialog__form {
+  display: grid;
+  gap: 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 15px;
+  background: color-mix(in srgb, var(--muted) 30%, white);
+}
+
+.warehouse-rack-management-dialog__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 14px;
+}
+
+.warehouse-rack-management-dialog__number-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.warehouse-rack-management-dialog__preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: white;
+}
+
+.warehouse-rack-management-dialog__preview > span {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.warehouse-rack-management-dialog__preview-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(10px, 1fr));
+  gap: 4px;
+}
+
+.warehouse-rack-management-dialog__preview-grid i {
+  display: block;
+  min-width: 10px;
+  height: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  background: #f1f5f9;
+}
+
+.warehouse-rack-management-dialog__warning,
+.warehouse-rack-management-dialog__confirm-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid #fde68a;
+  border-radius: 9px;
+  padding: 10px 11px;
+  color: #854d0e;
+  background: #fffbeb;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.warehouse-rack-management-dialog__warning svg,
+.warehouse-rack-management-dialog__confirm-copy svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.warehouse-rack-management-dialog__form-actions,
+.warehouse-rack-management-dialog__confirm-actions {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.warehouse-rack-management-dialog__confirm {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  background: color-mix(in srgb, var(--muted) 30%, white);
+}
+
+.warehouse-rack-management-dialog__footer {
+  justify-content: flex-end;
+  gap: 9px;
+  border-top: 1px solid var(--border);
+  padding: 13px 22px max(13px, env(safe-area-inset-bottom));
+}
+
+@media (max-width: 600px) {
+  .warehouse-management-dialog.warehouse-rack-management-dialog {
+    inset: 8px 8px calc(84px + env(safe-area-inset-bottom)) 8px;
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    border-radius: 15px;
+  }
+
+  .warehouse-management-dialog.warehouse-rack-management-dialog .warehouse-management-dialog__surface {
+    max-height: inherit;
+  }
+
+  .warehouse-management-dialog.warehouse-rack-management-dialog .warehouse-management-dialog__header {
+    padding: 15px 16px 12px;
+  }
+
+  .warehouse-rack-management-dialog__body {
+    gap: 13px;
+    padding: 14px 14px;
+  }
+
+  .warehouse-rack-management-dialog__fields {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .warehouse-rack-management-dialog__rack-main {
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .warehouse-rack-management-dialog__rack-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .warehouse-rack-management-dialog__rack-actions {
+    gap: 4px;
+  }
+
+  .warehouse-rack-management-dialog__rack-actions button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .warehouse-rack-management-dialog__footer {
+    padding: 10px 14px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .warehouse-rack-management-dialog__footer button {
+    min-width: 0;
+    flex: 1;
+    padding-inline: 9px;
+    font-size: 12px;
+  }
+}
+
+@keyframes rack-panel-enter {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .warehouse-rack-management-dialog { animation: none; }
+}
