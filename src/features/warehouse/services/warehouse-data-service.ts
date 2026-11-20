@@ -5,6 +5,8 @@ import { readWarehouseModelLayout } from "@/features/warehouse-creation/services
 import { inventoryPlacementApi, type CellInventoryItem, type CreateInventoryPlacementInput, type TransferInventoryInput } from "@/features/warehouse/api/inventory-placement-api";
 import type { LayoutRack, WarehouseLayout } from "@/features/warehouse/types";
 import { applyWallOutline, createWallsFromOutline } from "@/features/warehouse/utils/wall-outline";
+import { clearWarehouseLayoutCache, readWarehouseLayoutCache, writeWarehouseLayoutCache } from "@/features/warehouse/services/warehouse-layout-cache";
+import { WarehouseModelReadError } from "@/features/warehouse-creation/services/warehouse-model-read-error";
 
 export const warehouseDataService = {
   async getWarehouse(warehouseId: number) {
@@ -25,32 +27,54 @@ export const warehouseDataService = {
   },
 
   async getLayout(warehouseId: number): Promise<WarehouseLayout | null> {
+    let savedLayout: Awaited<ReturnType<typeof warehouseApi.getLayout>>;
     try {
-      const savedLayout = await warehouseApi.getLayout(warehouseId);
-      const modelMetadata = await readWarehouseModelLayout(savedLayout.model.url);
-      const layoutRacks: LayoutRack[] = savedLayout.racks.map((rack) => ({
-        rackId: rack.id,
-        position: rack.position,
-        rotation_y_deg: rack.rotation_y_deg,
-        dimensions: rack.dimensions,
-      }));
-      const wallOutline = savedLayout.walls?.outline ?? modelMetadata.wallOutline;
-      const baseLayout: WarehouseLayout = {
-        room: modelMetadata.room,
-        wallOutline: modelMetadata.wallOutline,
-        hiddenWallIndex: modelMetadata.hiddenWallIndex,
-        walls: createWallsFromOutline(modelMetadata.wallOutline, modelMetadata.room.height),
-        columns: modelMetadata.columns,
-        racks: layoutRacks,
-        model: savedLayout.model,
-      };
-      return {
-        ...applyWallOutline(baseLayout, wallOutline),
-      };
+      savedLayout = await warehouseApi.getLayout(warehouseId);
     } catch (error) {
-      if (error instanceof ApiError && error.status === 404) return null;
-      throw error;
+      if (!(error instanceof ApiError && error.status === 404)) throw error;
+
+      // The API returns 404 while any rack is still unplaced; preserve the last complete layout.
+      const cachedLayout = readWarehouseLayoutCache(warehouseId);
+      if (!cachedLayout) return null;
+      try {
+        await readWarehouseModelLayout(cachedLayout.model?.url ?? "");
+      } catch (modelError) {
+        if (modelError instanceof WarehouseModelReadError && modelError.kind === "http" && modelError.status === 404) {
+          clearWarehouseLayoutCache(warehouseId);
+          return null;
+        }
+      }
+      return cachedLayout;
     }
+
+    const modelMetadata = await readWarehouseModelLayout(savedLayout.model.url);
+    const layoutRacks: LayoutRack[] = savedLayout.racks.map((rack) => ({
+      rackId: rack.id,
+      position: rack.position,
+      rotation_y_deg: rack.rotation_y_deg,
+      dimensions: rack.dimensions,
+    }));
+    const wallOutline = savedLayout.walls?.outline ?? modelMetadata.wallOutline;
+    const baseLayout: WarehouseLayout = {
+      room: modelMetadata.room,
+      wallOutline: modelMetadata.wallOutline,
+      hiddenWallIndex: modelMetadata.hiddenWallIndex,
+      walls: createWallsFromOutline(modelMetadata.wallOutline, modelMetadata.room.height),
+      columns: modelMetadata.columns,
+      racks: layoutRacks,
+      model: savedLayout.model,
+    };
+    const layout = applyWallOutline(baseLayout, wallOutline);
+    writeWarehouseLayoutCache(warehouseId, layout);
+    return layout;
+  },
+
+  cacheLayout(warehouseId: number, layout: WarehouseLayout) {
+    writeWarehouseLayoutCache(warehouseId, layout);
+  },
+
+  clearLayoutCache(warehouseId: number) {
+    clearWarehouseLayoutCache(warehouseId);
   },
 
   getInventoryItems: dashboardDataService.getInventoryItems,

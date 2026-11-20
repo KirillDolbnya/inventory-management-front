@@ -165,10 +165,14 @@ export function WarehousePage() {
       eventsRequest,
     ]).then(([warehouse, racks, layout, items, eventResult]) => {
       if (!mounted) return;
+      const rackIds = new Set(racks.map((rack) => rack.id));
+      const currentLayout = layout
+        ? { ...layout, racks: layout.racks.filter((rack) => rackIds.has(rack.rackId)) }
+        : null;
       setPageData(warehouse ? {
         warehouse,
         racks,
-        layout,
+        layout: currentLayout,
         items,
         events: eventResult.events,
         eventsError: eventResult.eventsError,
@@ -184,6 +188,12 @@ export function WarehousePage() {
       mounted = false;
     };
   }, [warehouseId]);
+
+  useEffect(() => {
+    if (!pageData) return;
+    if (pageData.layout) warehouseDataService.cacheLayout(pageData.warehouse.id, pageData.layout);
+    else warehouseDataService.clearLayoutCache(pageData.warehouse.id);
+  }, [pageData?.layout, pageData?.warehouse.id]);
 
   const warehouseInventory = useMemo<WarehouseInventoryItem[]>(() => {
     if (!pageData) return [];

@@ -190,38 +190,44 @@ export function WarehouseCreationWizard({
 
         setWarehouse(loadedWarehouse);
         setRacks(loadedRacks);
-        setLayoutExists(Boolean(savedLayout));
+        setLayoutExists(Boolean(savedLayout || preservedLayout?.model?.url));
         resetWarehouseForm({ name: loadedWarehouse.name, address: loadedWarehouse.address });
 
-        if (savedLayout) {
-          const metadata = preservedLayout ? null : await readWarehouseModelLayout(savedLayout.model.url);
+        if (savedLayout || preservedLayout?.model?.url) {
+          const metadata = preservedLayout || !savedLayout ? null : await readWarehouseModelLayout(savedLayout.model.url);
           if (!current) return;
           const geometry = preservedLayout ?? makeDefaultLayout([], metadata?.room);
-          const savedRackIds = new Set(savedLayout.racks.map((rack) => rack.id));
-          const wallOutline = savedLayout.walls?.outline ?? geometry.wallOutline;
-          const restoredLayout = applyWallOutline({
-            ...geometry,
-            columns: geometry.columns ?? metadata?.columns ?? [],
-            model: savedLayout.model,
-          }, wallOutline);
-          const savedHiddenWallIndex = geometry.hiddenWallIndex ?? metadata?.hiddenWallIndex;
-          setLayout({
-            ...restoredLayout,
-            hiddenWallIndex: typeof savedHiddenWallIndex === "number" && savedHiddenWallIndex < wallOutline.length
-              ? savedHiddenWallIndex
-              : null,
-            columns: geometry.columns ?? metadata?.columns ?? [],
-            model: savedLayout.model,
-            racks: savedLayout.racks
+          const restoredRacks = savedLayout
+            ? savedLayout.racks
               .filter((savedRack) => loadedRacks.some((rack) => rack.id === savedRack.id))
               .map((savedRack) => ({
                 rackId: savedRack.id,
                 position: { ...savedRack.position },
                 rotation_y_deg: savedRack.rotation_y_deg,
                 dimensions: { ...savedRack.dimensions },
-              })),
+              }))
+            : geometry.racks.filter((savedRack) => loadedRacks.some((rack) => rack.id === savedRack.rackId));
+          const wallOutline = savedLayout?.walls?.outline ?? preservedLayout?.wallOutline ?? metadata?.wallOutline ?? geometry.wallOutline;
+          const columns = preservedLayout?.columns ?? metadata?.columns ?? geometry.columns ?? [];
+          const restoredLayout = applyWallOutline({
+            ...geometry,
+            columns,
+            model: savedLayout?.model ?? geometry.model,
+          }, wallOutline);
+          const savedHiddenWallIndex = preservedLayout
+            ? preservedLayout.hiddenWallIndex
+            : metadata?.hiddenWallIndex ?? geometry.hiddenWallIndex;
+          setLayout({
+            ...restoredLayout,
+            hiddenWallIndex: typeof savedHiddenWallIndex === "number" && savedHiddenWallIndex < wallOutline.length
+              ? savedHiddenWallIndex
+              : null,
+            columns,
+            model: savedLayout?.model ?? geometry.model,
+            racks: restoredRacks,
           });
-          const everyRackConfigured = loadedRacks.every((rack) => savedRackIds.has(rack.id));
+          const configuredRackIds = new Set(restoredRacks.map((rack) => rack.rackId));
+          const everyRackConfigured = loadedRacks.every((rack) => configuredRackIds.has(rack.id));
           setLayoutSaved(everyRackConfigured);
           setLayoutDirty(!everyRackConfigured);
           setStep(3);
