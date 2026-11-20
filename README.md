@@ -2,7 +2,7 @@
 
 Адаптивный интерфейс учёта склада на React, TypeScript, Vite, Tailwind CSS и shadcn/ui.
 
-Для запуска среды разработки выполните `docker compose up --build` и откройте http://localhost:5173. Адрес Laravel API задаётся через `VITE_API_URL` (пример в `.env.example`).
+Для запуска среды разработки выполните `docker compose up --build` и откройте http://localhost:5173. Адрес Laravel API задаётся через `VITE_API_URL`, а адрес карты — через `VITE_MAP_TILE_URL` (примеры в `.env.example`).
 
 Production-образ:
 
@@ -11,4 +11,10 @@ docker build --target production -t inventory-management-front .
 docker run --rm -p 8080:80 inventory-management-front
 ```
 
-Первый экран использует демонстрационные данные. API, реальная карта и DaData пока не подключены.
+Главная страница показывает склады на OpenStreetMap, список mock-инвентаря и события. Для отображения карты используется публичный слой тайлов OpenStreetMap с атрибуцией; для production-нагрузки можно указать другой совместимый источник в `VITE_MAP_TILE_URL`.
+
+Авторизация подключена к Laravel API через cookie-сессию Sanctum. При входе frontend получает `/sanctum/csrf-cookie`, затем отправляет `POST /api/auth/sign-in`. При запуске приложения состояние сессии восстанавливается через `GET /api/auth/me`, выход выполняется через `POST /api/auth/logout`. Все запросы передают cookies; токены и пароль в браузерном хранилище не сохраняются. Укажите адрес API в `VITE_API_URL` (по умолчанию для локального backend — `http://localhost:8080/api`). Backend должен разрешать origin `http://localhost:5173` с credentials и включать `localhost:5173` в `SANCTUM_STATEFUL_DOMAINS`.
+
+Склады, инвентарь и события остаются на mock-данных. DaData и остальные backend endpoints пока не подключены.
+
+Авторизованный пользователь может открыть страницу склада по маршруту `/warehouses/:warehouseId`. На ней показана интерактивная процедурная 3D-модель с демонстрационными стеллажами и ячейками, списком размещённого на складе инвентаря и событиями. Геометрия модели и данные складов пока mock-овые; API для страницы не подключён.
